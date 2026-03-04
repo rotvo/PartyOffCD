@@ -171,6 +171,7 @@ local SPELLS = {
     [47788] = { cd = 180, type = "DEF", class = "PRIEST", specs = { "HOLY" } }, -- Guardian Spirit
     [19236] = { cd = 90, type = "DEF", class = "PRIEST" }, -- Desperate Prayer
     [11487] = { cd = 30, type = "INT", class = "PRIEST" }, -- Interrupt
+    [15286] = { cd = 120, type = "DEF", class = "PRIEST" }, --[Vampiric Embrace]
 
     -- ROGUE
     [13750] = { cd = 180, type = "OFF", class = "ROGUE", specs = { "OUTLAW" } }, -- Adrenaline Rush
@@ -852,17 +853,6 @@ function PartyOffCD:NotifyOverrideReceived(sender, spellID, meta)
     end
 end
 
-function PartyOffCD:NotifyTimerAdjusted(sender, spellID, remaining)
-    local spellName = SafeGetSpellInfo(spellID) or ("Spell " .. tostring(spellID))
-    local senderName = Ambiguate and Ambiguate(sender or "?", "short") or (sender or "?")
-    local message = string.format("%s ajusto %s a %ss restantes", senderName, spellName, tostring(remaining))
-    DebugPrint(message)
-
-    if UIErrorsFrame and UIErrorsFrame.AddMessage then
-        UIErrorsFrame:AddMessage(message, 0.3, 0.9, 1, 1.5)
-    end
-end
-
 function PartyOffCD:BroadcastLocalOverrides(force)
     local channel = self:GetTargetChannel()
     if not channel then
@@ -1331,7 +1321,6 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
         end
 
         self:SetRemainingCooldown(senderKey, spellID, remaining, true)
-        self:NotifyTimerAdjusted(sender, spellID, remaining)
     end
 end
 
