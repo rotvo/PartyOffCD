@@ -346,6 +346,13 @@ function PartyOffCD:EncodeTimerAdjustMessage(spellID, remaining)
     }, ";")
 end
 
+function PartyOffCD:EncodeHelloMessage()
+    return table.concat({
+        MESSAGE_VERSION,
+        "H",
+    }, ";")
+end
+
 function PartyOffCD:DecodeMessage(message)
     if type(message) ~= "string" or message == "" then
         return nil
@@ -386,6 +393,10 @@ function PartyOffCD:DecodeMessage(message)
         end
 
         return action, spellID, remaining
+    end
+
+    if action == "H" then
+        return action
     end
 
     return nil
@@ -498,6 +509,17 @@ function PartyOffCD:SendTimerAdjustMessage(spellID, remaining)
     return true
 end
 
+function PartyOffCD:SendHelloMessage()
+    local channel = self:GetTargetChannel()
+    if not channel then
+        return false
+    end
+
+    local message = self:EncodeHelloMessage()
+    C_ChatInfo.SendAddonMessage(PREFIX, message, channel)
+    return true
+end
+
 function PartyOffCD:NotifyOverrideReceived(sender, spellID, meta)
     local spellName = SafeGetSpellInfo(spellID) or ("Spell " .. tostring(spellID))
     local senderName = Ambiguate and Ambiguate(sender or "?", "short") or (sender or "?")
@@ -546,6 +568,10 @@ function PartyOffCD:BroadcastLocalOverrides(force)
     for spellID, meta in pairs(bucket) do
         self:SendSyncMessage(spellID, meta)
     end
+end
+
+function PartyOffCD:RequestGroupOverrides()
+    self:SendHelloMessage()
 end
 
 function PartyOffCD:AddCustomSpell(classToken, spellID, cooldown, spellType)
@@ -801,12 +827,21 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
     end
 
     local action, spellID, valueA, valueB, valueC = self:DecodeMessage(message)
-    if not action or not spellID then
+    if not action then
         return
     end
 
     local senderKey = self:ResolveSenderKey(sender)
     if not senderKey then
+        return
+    end
+
+    if action == "H" then
+        self:BroadcastLocalOverrides(true)
+        return
+    end
+
+    if not spellID then
         return
     end
 
@@ -1345,7 +1380,7 @@ function PartyOffCD:CreateConfigPanel()
 
     local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     instructions:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -86)
-    instructions:SetText("Class toggle disables the whole class. Spell toggle is per spell. Minimap icon is always on.")
+    instructions:SetText("Edit any spell row to set your personal CD. Save syncs it automatically to the group.")
 
     local scrollFrame = CreateFrame("ScrollFrame", "PartyOffCDConfigScrollFrame", frame, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -110)
@@ -1414,46 +1449,6 @@ function PartyOffCD:RefreshConfigPanel()
 
             y = y - 26
 
-            local spellIDBox = CreateNumericEditBox(nil, content, 54, 8)
-            spellIDBox:SetPoint("TOPLEFT", content, "TOPLEFT", 20, y)
-            spellIDBox:SetText("")
-            self.configRows[#self.configRows + 1] = spellIDBox
-
-            local spellIDLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            spellIDLabel:SetPoint("LEFT", spellIDBox, "RIGHT", 4, 0)
-            spellIDLabel:SetText("ID")
-            self.configRows[#self.configRows + 1] = spellIDLabel
-
-            local cdBox = CreateNumericEditBox(nil, content, 42, 5)
-            cdBox:SetPoint("LEFT", spellIDLabel, "RIGHT", 10, 0)
-            cdBox:SetText("90")
-            self.configRows[#self.configRows + 1] = cdBox
-
-            local cdLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            cdLabel:SetPoint("LEFT", cdBox, "RIGHT", 4, 0)
-            cdLabel:SetText("CD")
-            self.configRows[#self.configRows + 1] = cdLabel
-
-            local addOffButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-            addOffButton:SetSize(62, 20)
-            addOffButton:SetPoint("LEFT", cdLabel, "RIGHT", 10, 0)
-            addOffButton:SetText("Sync OFF")
-            addOffButton:SetScript("OnClick", function()
-                PartyOffCD:AddCustomSpell(classToken, spellIDBox:GetText(), cdBox:GetText(), "OFF")
-            end)
-            self.configRows[#self.configRows + 1] = addOffButton
-
-            local addDefButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-            addDefButton:SetSize(62, 20)
-            addDefButton:SetPoint("LEFT", addOffButton, "RIGHT", 4, 0)
-            addDefButton:SetText("Sync DEF")
-            addDefButton:SetScript("OnClick", function()
-                PartyOffCD:AddCustomSpell(classToken, spellIDBox:GetText(), cdBox:GetText(), "DEF")
-            end)
-            self.configRows[#self.configRows + 1] = addDefButton
-
-            y = y - 26
-
             for _, spellID in ipairs(spellList) do
                 local spellName, texture = SafeGetSpellInfo(spellID)
                 local meta = self:GetDisplayMeta(spellID) or SPELLS[spellID]
@@ -1478,13 +1473,53 @@ function PartyOffCD:RefreshConfigPanel()
                 local playerOverride = self:GetPlayerOverride(spellID, self:GetPlayerCanonical())
                 local customSuffix = meta.custom and ", custom" or ""
                 local overrideSuffix = playerOverride and ", override" or ""
-                label:SetText(string.format("%s (%s, %ss, id %d%s%s)", spellName or ("Spell " .. spellID), meta.type, meta.cd, spellID, customSuffix, overrideSuffix))
+                label:SetWidth(170)
+                label:SetJustifyH("LEFT")
+                label:SetText(string.format("%s (%ss, id %d%s%s)", spellName or ("Spell " .. spellID), meta.cd, spellID, customSuffix, overrideSuffix))
                 if self.db.classEnabled[classToken] == false then
                     label:SetTextColor(0.55, 0.55, 0.55)
                 else
                     label:SetTextColor(0.9, 0.9, 0.9)
                 end
                 self.configRows[#self.configRows + 1] = label
+
+                local editButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+                editButton:SetSize(40, 18)
+                editButton:SetPoint("TOPLEFT", content, "TOPLEFT", 230, y + 1)
+                editButton:SetText("Edit")
+                self.configRows[#self.configRows + 1] = editButton
+
+                local editBox = CreateNumericEditBox(nil, content, 34, 5)
+                editBox:SetPoint("TOPLEFT", content, "TOPLEFT", 274, y)
+                editBox:SetText(tostring(meta.cd))
+                editBox:Hide()
+                self.configRows[#self.configRows + 1] = editBox
+
+                local saveButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+                saveButton:SetSize(42, 18)
+                saveButton:SetPoint("TOPLEFT", content, "TOPLEFT", 314, y + 1)
+                saveButton:SetText("Save")
+                saveButton:Hide()
+                self.configRows[#self.configRows + 1] = saveButton
+
+                editButton:SetScript("OnClick", function()
+                    editBox:SetText(tostring((PartyOffCD:GetDisplayMeta(spellID) or meta).cd))
+                    editBox:Show()
+                    saveButton:Show()
+                end)
+
+                saveButton:SetScript("OnClick", function()
+                    local newCooldown = tonumber(editBox:GetText())
+                    if not newCooldown or newCooldown <= 0 then
+                        DebugPrint("Ingresa un CD valido en segundos.")
+                        return
+                    end
+
+                    if PartyOffCD:AddCustomSpell(meta.class, spellID, newCooldown, meta.type) then
+                        editBox:Hide()
+                        saveButton:Hide()
+                    end
+                end)
 
                 y = y - 22
             end
@@ -1630,6 +1665,7 @@ function PartyOffCD:PrintConfig()
     DebugPrint("Spells activos: " .. tostring(self:GetEnabledSpellCount()) .. "/" .. tostring(self:GetSupportedSpellCount()))
     DebugPrint("Panel: " .. panelShown .. " | Config: " .. configShown .. " | Minimap: " .. minimapShown)
     DebugPrint("Comandos: /pocd use <spellID>, /pocd timer <spellID> <seg>, /pocd test, /pocd panel, /pocd config")
+    DebugPrint("UI: Usa Edit y Save en cada spell para guardar tu CD personal y sincronizarlo.")
 end
 
 function PartyOffCD:GetSupportedSpellCount()
@@ -1798,6 +1834,7 @@ function PartyOffCD:Initialize()
     self:RefreshPanelButtons()
     self:RefreshConfigPanel()
     self:RefreshMinimapButton()
+    self:RequestGroupOverrides()
     self:BroadcastLocalOverrides(true)
     self:RefreshTracker()
     DebugPrint("Cargado. Usa /pocd config o click izquierdo en el minimapa.")
@@ -1811,6 +1848,7 @@ PartyOffCD:SetScript("OnEvent", function(_, event, ...)
 
     if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
         PartyOffCD:BuildRoster()
+        PartyOffCD:RequestGroupOverrides()
         PartyOffCD:BroadcastLocalOverrides()
         PartyOffCD:RefreshTracker()
         return
@@ -1856,12 +1894,14 @@ PartyOffCD notes:
    Right click the minimap button opens the quick report panel.
    Drag the minimap button to move it around the minimap.
    The minimap icon is always enabled.
-   Each class section includes boxes to add or overwrite a spell:
-   enter SpellID, enter base CD in seconds, then click Sync OFF or Sync DEF.
+   Each spell row has an Edit button.
+   Click Edit, type your personal CD in seconds, then click Save.
+   Save stores it in your per-character SavedVariables and syncs it to the group.
    When a party member sends an override, you will see a short notification.
 
 5) Manual timer adjustment
    Use /pocd timer <spellID> <remainingSeconds> to correct an active timer.
    Example: /pocd timer 31884 45
    This updates your own running timer and notifies the group.
+   The addon also requests and rebroadcasts custom overrides whenever you join or change group.
 ]]
