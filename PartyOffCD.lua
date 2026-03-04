@@ -201,11 +201,12 @@ local SPELLS = {
     [137639] = { cd = 90, type = "OFF", class = "MONK", specs = { "WINDWALKER" } }, -- Storm, Earth, and Fire
     [123904] = { cd = 120, type = "OFF", class = "MONK", specs = { "WINDWALKER" } }, -- Invoke Xuen, the White Tiger
     [115203] = { cd = 360, type = "DEF", class = "MONK" }, -- Fortifying Brew
-    [122783] = { cd = 90, type = "DEF", class = "MONK" }, -- Diffuse Magic
+    [122783] = { cd = 90, type = "DEF", class = "MONK", specs = { "WINDWALKER" } }, -- Diffuse Magic
     [132578] = { cd = 120, type = "DEF", class = "MONK" },--[Invoke Niuzao, the Black Ox]
     [115399] = { cd = 120, type = "DEF", class = "MONK" },--[Black Ox Brew]
-    [1241059] = { cd = 45, type = "DEF", class = "MONK" },--[Celestial Infusion]
-
+    [116844] = { cd = 45, type = "DEF", class = "MONK" },--[Ring of Peace]
+    [119381] = { cd = 45, type = "DEF", class = "MONK" },--[Leg Sweep]
+    [119582] = { cd = 45, type = "DEF", class = "MONK" },--[Purifying Brew]
     -- WARLOCK
     [1122] = { cd = 180, type = "OFF", class = "WARLOCK", specs = { "DESTRO" } }, -- Summon Infernal
     [205180] = { cd = 120, type = "OFF", class = "WARLOCK", specs = { "DEMO" } }, -- Summon Darkglare
