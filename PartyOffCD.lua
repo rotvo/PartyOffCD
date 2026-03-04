@@ -230,9 +230,9 @@ local SPELLS = {
     [102342] = { cd = 90, type = "DEF", class = "DRUID" }, -- Ironbark
     [106951] = { cd = 180, type = "OFF", class = "DRUID", specs = { "FERAL" } }, -- Berserk
     [194223] = { cd = 180, type = "OFF", class = "DRUID", specs = { "BALANCE" } }, -- Celestial Alignment
-    [204066] = { cd = 180, type = "DEF", class = "DRUID"}, -- Lunar beam
-    [22842] = { cd = 36, type = "DEF", class = "DRUID" }, -- Frenzied Regeneration
-    [102558] = { cd = 36, type = "DEF", class = "DRUID"},--[Incarnation: Guardian of Ursoc]
+    [204066] = { cd = 180, type = "DEF", class = "DRUID" , specs = { "GUARDIAN" } }, -- Lunar beam
+    [22842] = { cd = 36, type = "DEF", class = "DRUID" , specs = { "GUARDIAN" }}, -- Frenzied Regeneration
+    [102558] = { cd = 36, type = "DEF", class = "DRUID", specs = { "GUARDIAN" }},--[Incarnation: Guardian of Ursoc]
 
     -- DEATH KNIGHT
     [48792] = { cd = 120, type = "DEF", class = "DEATHKNIGHT" }, -- Icebound Fortitude
@@ -313,6 +313,7 @@ PartyOffCD.interruptRows = {}
 PartyOffCD.lastOverrideBroadcast = 0
 PartyOffCD.lastRealtimeSync = 0
 PartyOffCD.lastLocalReport = {}
+PartyOffCD.senderSpecIDs = {}
 
 local function DebugPrint(message)
     print("|cff33ff99PartyOffCD|r: " .. tostring(message))
@@ -481,6 +482,22 @@ function PartyOffCD:GetPlayerCanonical()
     return self.playerKeys.full or self.playerKeys.short
 end
 
+function PartyOffCD:GetCurrentPlayerSpecID()
+    local specID = GetUnitSpecID("player") or self.playerKeys.specID
+    if specID and specID > 0 then
+        self.playerKeys.specID = specID
+        if self.playerKeys.full then
+            self.senderSpecIDs[self.playerKeys.full] = specID
+        end
+        if self.playerKeys.short then
+            self.senderSpecIDs[self.playerKeys.short] = specID
+        end
+        return specID
+    end
+
+    return nil
+end
+
 function PartyOffCD:IsSelfSender(sender)
     local key = NormalizeName(sender)
     if not key then
@@ -520,16 +537,17 @@ function PartyOffCD:GetTargetChannel()
     return nil
 end
 
-function PartyOffCD:EncodeUseMessage(spellID, timestamp)
+function PartyOffCD:EncodeUseMessage(spellID, timestamp, specID)
     return table.concat({
         MESSAGE_VERSION,
         "U",
         tostring(spellID),
         string.format("%.2f", timestamp or GetTime()),
+        tostring(specID or 0),
     }, ";")
 end
 
-function PartyOffCD:EncodeSyncMessage(spellID, cooldown, spellType, classToken)
+function PartyOffCD:EncodeSyncMessage(spellID, cooldown, spellType, classToken, specID)
     return table.concat({
         MESSAGE_VERSION,
         "S",
@@ -537,22 +555,25 @@ function PartyOffCD:EncodeSyncMessage(spellID, cooldown, spellType, classToken)
         tostring(cooldown),
         tostring(spellType),
         tostring(classToken),
+        tostring(specID or 0),
     }, ";")
 end
 
-function PartyOffCD:EncodeTimerAdjustMessage(spellID, remaining)
+function PartyOffCD:EncodeTimerAdjustMessage(spellID, remaining, specID)
     return table.concat({
         MESSAGE_VERSION,
         "R",
         tostring(spellID),
         tostring(remaining),
+        tostring(specID or 0),
     }, ";")
 end
 
-function PartyOffCD:EncodeHelloMessage()
+function PartyOffCD:EncodeHelloMessage(specID)
     return table.concat({
         MESSAGE_VERSION,
         "H",
+        tostring(specID or 0),
     }, ";")
 end
 
@@ -561,7 +582,7 @@ function PartyOffCD:DecodeMessage(message)
         return nil
     end
 
-    local version, action, a, b, c, d = strsplit(";", message)
+    local version, action, a, b, c, d, e = strsplit(";", message)
     if version ~= MESSAGE_VERSION then
         return nil
     end
@@ -569,11 +590,12 @@ function PartyOffCD:DecodeMessage(message)
     if action == "U" then
         local spellID = tonumber(a)
         local senderTime = tonumber(b)
+        local senderSpecID = tonumber(c)
         if not spellID then
             return nil
         end
 
-        return action, spellID, senderTime
+        return action, spellID, senderTime, senderSpecID
     end
 
     if action == "S" then
@@ -581,25 +603,28 @@ function PartyOffCD:DecodeMessage(message)
         local cooldown = tonumber(b)
         local spellType = c
         local classToken = d
+        local senderSpecID = tonumber(e)
         if not spellID or not cooldown or cooldown <= 0 then
             return nil
         end
 
-        return action, spellID, cooldown, spellType, classToken
+        return action, spellID, cooldown, spellType, classToken, senderSpecID
     end
 
     if action == "R" then
         local spellID = tonumber(a)
         local remaining = tonumber(b)
+        local senderSpecID = tonumber(c)
         if not spellID or remaining == nil then
             return nil
         end
 
-        return action, spellID, remaining
+        return action, spellID, remaining, senderSpecID
     end
 
     if action == "H" then
-        return action
+        local senderSpecID = tonumber(a)
+        return action, nil, senderSpecID
     end
 
     return nil
@@ -692,11 +717,51 @@ function PartyOffCD:GetSenderSpecID(senderKey)
         return rosterEntry.specID
     end
 
+    if rosterEntry then
+        if rosterEntry.key and self.senderSpecIDs[rosterEntry.key] then
+            return self.senderSpecIDs[rosterEntry.key]
+        end
+        if rosterEntry.shortKey and self.senderSpecIDs[rosterEntry.shortKey] then
+            return self.senderSpecIDs[rosterEntry.shortKey]
+        end
+    end
+
+    if self.senderSpecIDs[senderKey] then
+        return self.senderSpecIDs[senderKey]
+    end
+
     if senderKey == self.playerKeys.full or senderKey == self.playerKeys.short then
         return self.playerKeys.specID
     end
 
     return nil
+end
+
+function PartyOffCD:UpdateSenderSpecID(senderKey, specID)
+    senderKey = self:ResolveSenderKey(senderKey)
+    specID = tonumber(specID)
+    if not senderKey or not specID or specID <= 0 then
+        return false
+    end
+
+    self.senderSpecIDs[senderKey] = specID
+
+    local rosterEntry = self.rosterLookup[senderKey]
+    if rosterEntry then
+        rosterEntry.specID = specID
+        if rosterEntry.key then
+            self.senderSpecIDs[rosterEntry.key] = specID
+        end
+        if rosterEntry.shortKey then
+            self.senderSpecIDs[rosterEntry.shortKey] = specID
+        end
+    end
+
+    if senderKey == self.playerKeys.full or senderKey == self.playerKeys.short then
+        self.playerKeys.specID = specID
+    end
+
+    return true
 end
 
 function PartyOffCD:SetClassEnabled(classToken, isEnabled)
@@ -732,7 +797,7 @@ function PartyOffCD:SendSyncMessage(spellID, meta)
         return false
     end
 
-    local message = self:EncodeSyncMessage(spellID, meta.cd, meta.type, meta.class)
+    local message = self:EncodeSyncMessage(spellID, meta.cd, meta.type, meta.class, self:GetCurrentPlayerSpecID())
     C_ChatInfo.SendAddonMessage(PREFIX, message, channel)
     return true
 end
@@ -743,7 +808,7 @@ function PartyOffCD:SendTimerAdjustMessage(spellID, remaining)
         return false
     end
 
-    local message = self:EncodeTimerAdjustMessage(spellID, remaining)
+    local message = self:EncodeTimerAdjustMessage(spellID, remaining, self:GetCurrentPlayerSpecID())
     C_ChatInfo.SendAddonMessage(PREFIX, message, channel)
     return true
 end
@@ -754,7 +819,7 @@ function PartyOffCD:SendHelloMessage()
         return false
     end
 
-    local message = self:EncodeHelloMessage()
+    local message = self:EncodeHelloMessage(self:GetCurrentPlayerSpecID())
     C_ChatInfo.SendAddonMessage(PREFIX, message, channel)
     return true
 end
@@ -1098,7 +1163,7 @@ function PartyOffCD:SendUseMessage(spellID)
         return false
     end
 
-    local message = self:EncodeUseMessage(spellID, GetTime())
+    local message = self:EncodeUseMessage(spellID, GetTime(), self:GetCurrentPlayerSpecID())
     C_ChatInfo.SendAddonMessage(PREFIX, message, channel)
     return true
 end
@@ -1150,7 +1215,7 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
         return
     end
 
-    local action, spellID, valueA, valueB, valueC = self:DecodeMessage(message)
+    local action, spellID, valueA, valueB, valueC, valueD = self:DecodeMessage(message)
     if not action then
         return
     end
@@ -1161,7 +1226,10 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
     end
 
     if action == "H" then
+        local senderSpecID = valueA
+        self:UpdateSenderSpecID(senderKey, senderSpecID)
         self:BroadcastLocalOverrides(true)
+        self:RefreshTracker()
         return
     end
 
@@ -1171,6 +1239,8 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
 
     if action == "U" then
         local senderTime = valueA
+        local senderSpecID = valueB
+        self:UpdateSenderSpecID(senderKey, senderSpecID)
         local meta = self:GetEffectiveMeta(senderKey, spellID)
         if not meta or not self:IsSpellEnabled(spellID) then
             return
@@ -1189,6 +1259,8 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
         local cooldown = valueA
         local spellType = valueB
         local classToken = valueC
+        local senderSpecID = valueD
+        self:UpdateSenderSpecID(senderKey, senderSpecID)
 
         if not SPELL_TYPE_PRIORITY[spellType] then
             return
@@ -1224,6 +1296,8 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
 
     if action == "R" then
         local remaining = valueA
+        local senderSpecID = valueB
+        self:UpdateSenderSpecID(senderKey, senderSpecID)
         local meta = self:GetEffectiveMeta(senderKey, spellID)
         if not meta or not self:IsSpellEnabled(spellID) then
             return
@@ -1257,6 +1331,12 @@ function PartyOffCD:BuildRoster()
             local shortName = UnitName(unit)
             local _, classToken = UnitClass(unit)
             local specID = GetUnitSpecID(unit)
+            local key = NormalizeName(fullName)
+            local shortKey = NormalizeName(shortName)
+
+            if not specID then
+                specID = (key and self.senderSpecIDs[key]) or (shortKey and self.senderSpecIDs[shortKey]) or nil
+            end
 
             if fullName and shortName then
                 local entry = {
@@ -1265,8 +1345,8 @@ function PartyOffCD:BuildRoster()
                     fullName = fullName,
                     class = classToken,
                     specID = specID,
-                    key = NormalizeName(fullName),
-                    shortKey = NormalizeName(shortName),
+                    key = key,
+                    shortKey = shortKey,
                 }
 
                 self.roster[#self.roster + 1] = entry
@@ -1278,6 +1358,15 @@ function PartyOffCD:BuildRoster()
                 if entry.shortKey and not self.rosterLookup[entry.shortKey] then
                     self.rosterLookup[entry.shortKey] = entry
                 end
+
+                if specID then
+                    if entry.key then
+                        self.senderSpecIDs[entry.key] = specID
+                    end
+                    if entry.shortKey then
+                        self.senderSpecIDs[entry.shortKey] = specID
+                    end
+                end
             end
         end
     end
@@ -1286,10 +1375,23 @@ function PartyOffCD:BuildRoster()
     local playerShort = UnitName("player")
     local _, playerClass = UnitClass("player")
     local playerSpecID = GetUnitSpecID("player")
-    self.playerKeys.full = NormalizeName(playerFull)
-    self.playerKeys.short = NormalizeName(playerShort)
+    local playerFullKey = NormalizeName(playerFull)
+    local playerShortKey = NormalizeName(playerShort)
+    if not playerSpecID then
+        playerSpecID = (playerFullKey and self.senderSpecIDs[playerFullKey]) or (playerShortKey and self.senderSpecIDs[playerShortKey]) or nil
+    end
+    self.playerKeys.full = playerFullKey
+    self.playerKeys.short = playerShortKey
     self.playerKeys.class = playerClass
     self.playerKeys.specID = playerSpecID
+    if playerSpecID then
+        if self.playerKeys.full then
+            self.senderSpecIDs[self.playerKeys.full] = playerSpecID
+        end
+        if self.playerKeys.short then
+            self.senderSpecIDs[self.playerKeys.short] = playerSpecID
+        end
+    end
 end
 
 local function GetCompactPartyAnchor(index)
@@ -1430,7 +1532,7 @@ function PartyOffCD:GetSortedCooldowns(senderKey, onlyType)
             local meta = self:GetEffectiveMeta(senderKey, spellID)
             local passesType = meta and ((onlyType and meta.type == onlyType) or (not onlyType and meta.type ~= "INT"))
             local passesClass = meta and (not senderClass or meta.class == senderClass)
-            local passesSpec = passesType and passesClass and (not meta.specs)
+            local passesSpec = passesType and passesClass and ((not meta.specs) or (not senderSpecID))
             if passesClass and not passesSpec and meta.specs and senderSpecID then
                 for _, specValue in ipairs(meta.specs) do
                     local allowedSpecID = ResolveSpecValue(meta.class, specValue)
