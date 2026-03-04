@@ -170,6 +170,7 @@ local SPELLS = {
     [33206] = { cd = 180, type = "DEF", class = "PRIEST", specs = { "DISC" } }, -- Pain Suppression
     [47788] = { cd = 180, type = "DEF", class = "PRIEST", specs = { "HOLY" } }, -- Guardian Spirit
     [19236] = { cd = 90, type = "DEF", class = "PRIEST" }, -- Desperate Prayer
+    [11487] = { cd = 30, type = "INT", class = "PRIEST" }, -- Interrupt
 
     -- ROGUE
     [13750] = { cd = 180, type = "OFF", class = "ROGUE", specs = { "OUTLAW" } }, -- Adrenaline Rush
@@ -208,6 +209,7 @@ local SPELLS = {
     [119381] = { cd = 50, type = "DEF", class = "MONK" },--[Leg Sweep]
     [119582] = { cd = 20, type = "DEF", class = "MONK" },--[Purifying Brew]
     [1241059] = { cd = 20, type = "DEF", class = "MONK" },--[Celestial Infusion]
+    [116705] = { cd = 15, type = "INT", class = "MONK" }, -- spear hand strike
     -- WARLOCK
     [1122] = { cd = 180, type = "OFF", class = "WARLOCK", specs = { "DESTRO" } }, -- Summon Infernal
     [205180] = { cd = 120, type = "OFF", class = "WARLOCK", specs = { "DEMO" } }, -- Summon Darkglare
