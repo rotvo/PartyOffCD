@@ -7,6 +7,8 @@ local PREFIX = "POCD"
 local MESSAGE_VERSION = "v1"
 local DUPLICATE_WINDOW = 1.5
 local UPDATE_INTERVAL = 0.2
+local REAL_SYNC_INTERVAL = 2.0
+local REAL_SYNC_THRESHOLD = 1.5
 local MAX_TRACKED_ROWS = 5
 local ICON_SIZE = 30
 local ICON_SPACING = 3
@@ -46,6 +48,83 @@ local CLASS_LABELS = {
     DEMONHUNTER = "Demon Hunter",
 }
 
+local SPEC_ALIASES = {
+    PALADIN = {
+        HOLY = 65,
+        PROTECTION = 66,
+        RETRIBUTION = 70,
+    },
+    EVOKER = {
+        DEVASTATION = 1467,
+        PRESERVATION = 1468,
+        AUGMENTATION = 1473,
+    },
+    MAGE = {
+        ARCANE = 62,
+        FIRE = 63,
+        FROST = 64,
+    },
+    PRIEST = {
+        DISC = 256,
+        DISCIPLINE = 256,
+        HOLY = 257,
+        SHADOW = 258,
+    },
+    ROGUE = {
+        ASSASSINATION = 259,
+        OUTLAW = 260,
+        SUBTLETY = 261,
+    },
+    HUNTER = {
+        BM = 253,
+        BEASTMASTERY = 253,
+        BEAST_MASTERY = 253,
+        MARKSMANSHIP = 254,
+        MM = 254,
+        SURVIVAL = 255,
+        SV = 255,
+    },
+    SHAMAN = {
+        ELEMENTAL = 262,
+        ENHANCEMENT = 263,
+        RESTORATION = 264,
+        RESTO = 264,
+    },
+    MONK = {
+        BREWMASTER = 268,
+        MISTWEAVER = 270,
+        WINDWALKER = 269,
+    },
+    WARLOCK = {
+        AFFLICTION = 265,
+        DEMO = 266,
+        DEMONOLOGY = 266,
+        DESTRUCTION = 267,
+        DESTRO = 267,
+    },
+    WARRIOR = {
+        ARMS = 71,
+        FURY = 72,
+        PROTECTION = 73,
+    },
+    DRUID = {
+        BALANCE = 102,
+        FERAL = 103,
+        GUARDIAN = 104,
+        RESTORATION = 105,
+        RESTO = 105,
+    },
+    DEATHKNIGHT = {
+        BLOOD = 250,
+        FROST = 251,
+        UNHOLY = 252,
+    },
+    DEMONHUNTER = {
+        HAVOC = 577,
+        VENGEANCE = 581,
+    },
+}
+
 local SPELLS = {
     [31884] = { cd = 120, type = "OFF", class = "PALADIN" }, -- Avenging Wrath
     [216331] = { cd = 120, type = "OFF", class = "PALADIN" }, -- Avenging Crusader
@@ -53,72 +132,71 @@ local SPELLS = {
     [6940] = { cd = 120, type = "DEF", class = "PALADIN" }, -- Blessing of Sacrifice
     [31850] = { cd = 120, type = "DEF", class = "PALADIN" }, -- Ardent Defender
     [31821] = { cd = 180, type = "DEF", class = "PALADIN" }, -- Aura Mastery
-    [375087] = { cd = 120, type = "OFF", class = "EVOKER" }, -- Dragonrage
+    [375087] = { cd = 120, type = "OFF", class = "EVOKER", specs = { "DEVASTATION" } }, -- Dragonrage
     [370553] = { cd = 120, type = "OFF", class = "EVOKER" }, -- Tip the Scales
     [357210] = { cd = 120, type = "OFF", class = "EVOKER" }, -- Deep Breath
     [363916] = { cd = 90, type = "DEF", class = "EVOKER" }, -- Obsidian Scales
     [374227] = { cd = 90, type = "DEF", class = "EVOKER" }, -- Zephyr
-    [190319] = { cd = 120, type = "OFF", class = "MAGE" }, -- Combustion
-    [12042] = { cd = 90, type = "OFF", class = "MAGE" }, -- Arcane Power
-    [12472] = { cd = 180, type = "OFF", class = "MAGE" }, -- Icy Veins
+    [190319] = { cd = 120, type = "OFF", class = "MAGE", specs = { "FIRE" } }, -- Combustion
+    [12042] = { cd = 90, type = "OFF", class = "MAGE", specs = { "ARCANE" } }, -- Arcane Power
+    [12472] = { cd = 180, type = "OFF", class = "MAGE", specs = { "FROST" } }, -- Icy Veins
     [55342] = { cd = 120, type = "OFF", class = "MAGE" }, -- Mirror Image
     [45438] = { cd = 240, type = "DEF", class = "MAGE" }, -- Ice Block
     [10060] = { cd = 120, type = "OFF", class = "PRIEST" }, -- Power Infusion
-    [228260] = { cd = 90, type = "OFF", class = "PRIEST" }, -- Void Eruption
-    [200183] = { cd = 120, type = "OFF", class = "PRIEST" }, -- Apotheosis
-    [47585] = { cd = 120, type = "DEF", class = "PRIEST" }, -- Dispersion
-    [33206] = { cd = 180, type = "DEF", class = "PRIEST" }, -- Pain Suppression
-    [47788] = { cd = 180, type = "DEF", class = "PRIEST" }, -- Guardian Spirit
+    [228260] = { cd = 90, type = "OFF", class = "PRIEST", specs = { "SHADOW" } }, -- Void Eruption
+    [200183] = { cd = 120, type = "OFF", class = "PRIEST", specs = { "HOLY" } }, -- Apotheosis
+    [47585] = { cd = 120, type = "DEF", class = "PRIEST", specs = { "SHADOW" } }, -- Dispersion
+    [33206] = { cd = 180, type = "DEF", class = "PRIEST", specs = { "DISC" } }, -- Pain Suppression
+    [47788] = { cd = 180, type = "DEF", class = "PRIEST", specs = { "HOLY" } }, -- Guardian Spirit
     [19236] = { cd = 90, type = "DEF", class = "PRIEST" }, -- Desperate Prayer
-    [13750] = { cd = 180, type = "OFF", class = "ROGUE" }, -- Adrenaline Rush
+    [13750] = { cd = 180, type = "OFF", class = "ROGUE", specs = { "OUTLAW" } }, -- Adrenaline Rush
     [121471] = { cd = 180, type = "OFF", class = "ROGUE" }, -- Shadow Blades
     [31224] = { cd = 120, type = "DEF", class = "ROGUE" }, -- Cloak of Shadows
     [5277] = { cd = 120, type = "DEF", class = "ROGUE" }, -- Evasion
-    [19574] = { cd = 90, type = "OFF", class = "HUNTER" }, -- Bestial Wrath
-    [288613] = { cd = 120, type = "OFF", class = "HUNTER" }, -- Trueshot
-    [266779] = { cd = 120, type = "OFF", class = "HUNTER" }, -- Coordinated Assault
+    [19574] = { cd = 90, type = "OFF", class = "HUNTER", specs = { "BM" } }, -- Bestial Wrath
+    [288613] = { cd = 120, type = "OFF", class = "HUNTER", specs = { "MM" } }, -- Trueshot
+    [266779] = { cd = 120, type = "OFF", class = "HUNTER", specs = { "SV" } }, -- Coordinated Assault
     [186265] = { cd = 180, type = "DEF", class = "HUNTER" }, -- Aspect of the Turtle
     [109304] = { cd = 120, type = "DEF", class = "HUNTER" }, -- Exhilaration
-    [191634] = { cd = 60, type = "OFF", class = "SHAMAN" }, -- Stormkeeper
+    [191634] = { cd = 60, type = "OFF", class = "SHAMAN", specs = { "ELEMENTAL" } }, -- Stormkeeper
     [321530] = { cd = 300, type = "OFF", class = "SHAMAN" }, -- Bloodlust
     [114050] = { cd = 180, type = "OFF", class = "SHAMAN" }, -- Ascendance
     [198067] = { cd = 150, type = "OFF", class = "SHAMAN" }, -- Fire Elemental
     [108271] = { cd = 90, type = "DEF", class = "SHAMAN" }, -- Astral Shift
-    [115080] = { cd = 120, type = "OFF", class = "MONK" }, -- Touch of Death
-    [137639] = { cd = 90, type = "OFF", class = "MONK" }, -- Storm, Earth, and Fire
-    [123904] = { cd = 120, type = "OFF", class = "MONK" }, -- Invoke Xuen, the White Tiger
+    [115080] = { cd = 120, type = "OFF", class = "MONK", specs = { "WINDWALKER" } }, -- Touch of Death
+    [137639] = { cd = 90, type = "OFF", class = "MONK", specs = { "WINDWALKER" } }, -- Storm, Earth, and Fire
+    [123904] = { cd = 120, type = "OFF", class = "MONK", specs = { "WINDWALKER" } }, -- Invoke Xuen, the White Tiger
     [115203] = { cd = 180, type = "DEF", class = "MONK" }, -- Fortifying Brew
     [122783] = { cd = 90, type = "DEF", class = "MONK" }, -- Diffuse Magic
     [122278] = { cd = 120, type = "DEF", class = "MONK" }, -- Dampen Harm
-    [1122] = { cd = 180, type = "OFF", class = "WARLOCK" }, -- Summon Infernal
-    [205180] = { cd = 120, type = "OFF", class = "WARLOCK" }, -- Summon Darkglare
-    [113860] = { cd = 120, type = "OFF", class = "WARLOCK" }, -- Dark Soul: Misery
-    [265187] = { cd = 120, type = "OFF", class = "WARLOCK" }, -- Dark Soul: Summon demonic Tyrant
+    [1122] = { cd = 180, type = "OFF", class = "WARLOCK", specs = { "DESTRO" } }, -- Summon Infernal
+    [205180] = { cd = 120, type = "OFF", class = "WARLOCK", specs = { "DEMO" } }, -- Summon Darkglare
+    [113860] = { cd = 120, type = "OFF", class = "WARLOCK", specs = { "AFFLICTION" } }, -- Dark Soul: Misery
+    [265187] = { cd = 120, type = "OFF", class = "WARLOCK", specs = { "DEMO" } }, -- Dark Soul: Summon demonic Tyrant
     [1276672] = { cd = 120, type = "OFF", class = "WARLOCK" }, -- Dark Soul: Summon Doomguard
     [108416] = { cd = 60, type = "DEF", class = "WARLOCK" }, -- Dark Pact
     [104773] = { cd = 180, type = "DEF", class = "WARLOCK" }, -- Unending Resolve
     [97462] = { cd = 180, type = "DEF", class = "WARRIOR" }, -- Rallying Cry
     [871] = { cd = 240, type = "DEF", class = "WARRIOR" }, -- Shield Wall
     [118038] = { cd = 120, type = "DEF", class = "WARRIOR" }, -- Die by the Sword
-    [1719] = { cd = 90, type = "OFF", class = "WARRIOR" }, -- Recklessness
-    [107574] = { cd = 90, type = "OFF", class = "WARRIOR" }, -- Avatar
+    [1719] = { cd = 90, type = "OFF", class = "WARRIOR", specs = { "FURY" } }, -- Recklessness
+    [107574] = { cd = 90, type = "OFF", class = "WARRIOR", specs = { "ARMS", "FURY" } }, -- Avatar
     [22812] = { cd = 60, type = "DEF", class = "DRUID" }, -- Barkskin
     [61336] = { cd = 180, type = "DEF", class = "DRUID" }, -- Survival Instincts
     [102342] = { cd = 90, type = "DEF", class = "DRUID" }, -- Ironbark
-    [106951] = { cd = 180, type = "OFF", class = "DRUID" }, -- Berserk
-    [194223] = { cd = 180, type = "OFF", class = "DRUID" }, -- Celestial Alignment
-    [22842] = { cd = 36, type = "DEF", class = "DRUID" }, -- Frenzied Regeneration
-    [48792] = { cd = 180, type = "DEF", class = "DEATHKNIGHT" }, -- Icebound Fortitude
-    [48707] = { cd = 60, type = "DEF", class = "DEATHKNIGHT" }, -- Anti-Magic Shell
-    [51271] = { cd = 60, type = "OFF", class = "DEATHKNIGHT" }, -- Pillar of Frost
-    [47568] = { cd = 120, type = "OFF", class = "DEATHKNIGHT" }, -- Empower Rune Weapon
-    [315443] = { cd = 120, type = "OFF", class = "DEATHKNIGHT" }, -- Abomination Limb
-    [1233448] = { cd = 45, type = "OFF", class = "DEATHKNIGHT" }, -- User provided Midnight DK CD
-    [42650] = { cd = 90, type = "OFF", class = "DEATHKNIGHT" }, -- Army of the Dead
+    [106951] = { cd = 180, type = "OFF", class = "DRUID", specs = { "FERAL" } }, -- Berserk
+    [194223] = { cd = 180, type = "OFF", class = "DRUID", specs = { "BALANCE" } }, -- Celestial Alignment
+    [22842] = { cd = 36, type = "DEF", class = "DRUID", specs = { "GUARDIAN" } }, -- Frenzied Regeneration
+    [48792] = { cd = 120, type = "DEF", class = "DEATHKNIGHT" }, -- Icebound Fortitude
+    [48707] = { cd = 40, type = "DEF", class = "DEATHKNIGHT" }, -- Anti-Magic Shell
+    [51271] = { cd = 60, type = "OFF", class = "DEATHKNIGHT", specs = { "FROST" } }, -- Pillar of Frost
+    [47568] = { cd = 120, type = "OFF", class = "DEATHKNIGHT", specs = { "FROST" } }, -- Empower Rune Weapon
+    [1233448] = { cd = 45, type = "OFF", class = "DEATHKNIGHT", specs = { "UNHOLY" } }, -- User provided Midnight DK CD
+    [42650] = { cd = 90, type = "OFF", class = "DEATHKNIGHT", specs = { "UNHOLY" } }, -- Army of the Dead
     [196555] = { cd = 120, type = "DEF", class = "DEMONHUNTER" }, -- Netherwalk
-    [191427] = { cd = 180, type = "OFF", class = "DEMONHUNTER" }, -- Metamorphosis
-    [198589] = { cd = 60, type = "DEF", class = "DEMONHUNTER" }, -- Blur
-    [196718] = { cd = 300, type = "DEF", class = "DEMONHUNTER" }, -- Darkness
+    [191427] = { cd = 180, type = "OFF", class = "DEMONHUNTER", specs = { "HAVOC" } }, -- Metamorphosis
+    [198589] = { cd = 60, type = "DEF", class = "DEMONHUNTER", specs = { "HAVOC" } }, -- Blur
+    [196718] = { cd = 300, type = "DEF", class = "DEMONHUNTER", specs = { "HAVOC" } }, -- Darkness
 }
 
 local BASE_SPELLS = {}
@@ -127,6 +205,7 @@ for spellID, meta in pairs(SPELLS) do
         cd = meta.cd,
         type = meta.type,
         class = meta.class,
+        specs = meta.specs,
     }
 end
 
@@ -173,7 +252,10 @@ PartyOffCD.playerKeys = {}
 PartyOffCD.db = nil
 PartyOffCD.trackerTicker = nil
 PartyOffCD.configRows = {}
+PartyOffCD.classAddEditorState = {}
 PartyOffCD.lastOverrideBroadcast = 0
+PartyOffCD.lastRealtimeSync = 0
+PartyOffCD.lastLocalReport = {}
 
 local function DebugPrint(message)
     print("|cff33ff99PartyOffCD|r: " .. tostring(message))
@@ -205,6 +287,60 @@ local function SafeGetSpellInfo(spellID)
 
     local name, _, icon = GetSpellInfo(spellID)
     return name, icon
+end
+
+local function SafeGetSpellCooldown(spellID)
+    if C_Spell and C_Spell.GetSpellCooldown then
+        local info = C_Spell.GetSpellCooldown(spellID)
+        if info then
+            return info.startTime or 0, info.duration or 0, info.isEnabled ~= false
+        end
+    end
+
+    local startTime, duration, enabled = GetSpellCooldown(spellID)
+    return startTime or 0, duration or 0, enabled ~= 0
+end
+
+local function GetUnitSpecID(unit)
+    if not unit or not UnitExists(unit) then
+        return nil
+    end
+
+    if UnitIsUnit(unit, "player") then
+        local currentSpecIndex = GetSpecialization and GetSpecialization()
+        if currentSpecIndex and currentSpecIndex > 0 then
+            local specID = GetSpecializationInfo(currentSpecIndex)
+            return specID
+        end
+        return nil
+    end
+
+    if GetInspectSpecialization then
+        local inspectSpecID = GetInspectSpecialization(unit)
+        if inspectSpecID and inspectSpecID > 0 then
+            return inspectSpecID
+        end
+    end
+
+    return nil
+end
+
+local function ResolveSpecValue(classToken, specValue)
+    if type(specValue) == "number" then
+        return specValue
+    end
+
+    if type(specValue) ~= "string" then
+        return nil
+    end
+
+    local aliasKey = string.upper(specValue)
+    local classSpecs = classToken and SPEC_ALIASES[classToken] or nil
+    if classSpecs then
+        return classSpecs[aliasKey]
+    end
+
+    return nil
 end
 
 local function FormatRemaining(seconds)
@@ -460,6 +596,42 @@ function PartyOffCD:GetDisplayMeta(spellID)
     return self:GetEffectiveMeta(playerKey, spellID) or SPELLS[spellID]
 end
 
+function PartyOffCD:GetSenderClass(senderKey)
+    senderKey = self:ResolveSenderKey(senderKey)
+    if not senderKey then
+        return nil
+    end
+
+    local rosterEntry = self.rosterLookup[senderKey]
+    if rosterEntry and rosterEntry.class then
+        return rosterEntry.class
+    end
+
+    if senderKey == self.playerKeys.full or senderKey == self.playerKeys.short then
+        return self.playerKeys.class
+    end
+
+    return nil
+end
+
+function PartyOffCD:GetSenderSpecID(senderKey)
+    senderKey = self:ResolveSenderKey(senderKey)
+    if not senderKey then
+        return nil
+    end
+
+    local rosterEntry = self.rosterLookup[senderKey]
+    if rosterEntry and rosterEntry.specID then
+        return rosterEntry.specID
+    end
+
+    if senderKey == self.playerKeys.full or senderKey == self.playerKeys.short then
+        return self.playerKeys.specID
+    end
+
+    return nil
+end
+
 function PartyOffCD:SetClassEnabled(classToken, isEnabled)
     self.db.classEnabled[classToken] = isEnabled and true or false
 
@@ -617,6 +789,7 @@ function PartyOffCD:AddCustomSpell(classToken, spellID, cooldown, spellType)
         type = spellType,
         class = classToken,
         custom = not existing,
+        specs = existing and existing.specs or nil,
     }
 
     self:GetOverrideBucket(playerKey, true)[spellID] = override
@@ -712,6 +885,24 @@ function PartyOffCD:GetSpellMeta(spellID)
     return SPELLS[spellID]
 end
 
+function PartyOffCD:GetLocalCooldownRemaining(spellID)
+    local startTime, duration, enabled = SafeGetSpellCooldown(spellID)
+    if not enabled or not startTime or not duration then
+        return 0, duration or 0
+    end
+
+    if duration <= 1.5 or startTime <= 0 then
+        return 0, duration
+    end
+
+    local remaining = (startTime + duration) - GetTime()
+    if remaining < 0 then
+        remaining = 0
+    end
+
+    return remaining, duration
+end
+
 function PartyOffCD:StartCooldown(senderKey, spellID, senderTime)
     senderKey = self:ResolveSenderKey(senderKey)
     local meta = self:GetEffectiveMeta(senderKey, spellID)
@@ -776,6 +967,64 @@ function PartyOffCD:SetRemainingCooldown(senderKey, spellID, remaining, skipSend
     return true
 end
 
+function PartyOffCD:CanReportLocalUse(spellID)
+    local remaining = self:GetLocalCooldownRemaining(spellID)
+    if remaining and remaining > 0.2 then
+        return false, remaining
+    end
+
+    return true, 0
+end
+
+function PartyOffCD:HandleLocalSpellcastSucceeded(spellID)
+    spellID = tonumber(spellID)
+    if not spellID or not self:GetSpellMeta(spellID) or not self:IsSpellEnabled(spellID) then
+        return
+    end
+
+    local now = GetTime()
+    local last = self.lastLocalReport[spellID]
+    if last and (now - last) < 0.75 then
+        return
+    end
+
+    self.lastLocalReport[spellID] = now
+    self:ReportSpellUse(spellID, true)
+end
+
+function PartyOffCD:SyncLocalRealCooldowns()
+    local playerKey = self:GetPlayerCanonical()
+    if not playerKey or not self.cooldowns[playerKey] then
+        return
+    end
+
+    local now = GetTime()
+    if (now - (self.lastRealtimeSync or 0)) < REAL_SYNC_INTERVAL then
+        return
+    end
+
+    self.lastRealtimeSync = now
+
+    for spellID, cooldownData in pairs(self.cooldowns[playerKey]) do
+        if self:IsSpellEnabled(spellID) then
+            local trackedRemaining = (type(cooldownData) == "table" and cooldownData.endTime or 0) - now
+            local realRemaining = self:GetLocalCooldownRemaining(spellID)
+
+            if trackedRemaining < 0 then
+                trackedRemaining = 0
+            end
+
+            if realRemaining <= 0 then
+                if trackedRemaining > REAL_SYNC_THRESHOLD then
+                    self:SetRemainingCooldown(playerKey, spellID, 0)
+                end
+            elseif math.abs(realRemaining - trackedRemaining) >= REAL_SYNC_THRESHOLD then
+                self:SetRemainingCooldown(playerKey, spellID, math.ceil(realRemaining))
+            end
+        end
+    end
+end
+
 function PartyOffCD:SendUseMessage(spellID)
     local channel = self:GetTargetChannel()
     if not channel then
@@ -802,6 +1051,14 @@ function PartyOffCD:ReportSpellUse(spellID, silent)
             DebugPrint("Ese spell esta desactivado en la configuracion.")
         end
         return
+    end
+
+    if not silent then
+        local canReport, remaining = self:CanReportLocalUse(spellID)
+        if not canReport then
+            DebugPrint(string.format("Ese spell aun esta en cooldown real (%.1fs).", remaining))
+            return
+        end
     end
 
     local playerKey = self:GetPlayerCanonical()
@@ -880,6 +1137,7 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
             type = spellType,
             class = classToken,
             custom = not BASE_SPELLS[spellID],
+            specs = (BASE_SPELLS[spellID] and BASE_SPELLS[spellID].specs) or (SPELLS[spellID] and SPELLS[spellID].specs) or nil,
         }
 
         if not SPELLS[spellID] then
@@ -930,12 +1188,16 @@ function PartyOffCD:BuildRoster()
         if UnitExists(unit) then
             local fullName = GetUnitFullName(unit)
             local shortName = UnitName(unit)
+            local _, classToken = UnitClass(unit)
+            local specID = GetUnitSpecID(unit)
 
             if fullName and shortName then
                 local entry = {
                     unit = unit,
                     name = shortName,
                     fullName = fullName,
+                    class = classToken,
+                    specID = specID,
                     key = NormalizeName(fullName),
                     shortKey = NormalizeName(shortName),
                 }
@@ -955,8 +1217,12 @@ function PartyOffCD:BuildRoster()
 
     local playerFull = GetUnitFullName("player")
     local playerShort = UnitName("player")
+    local _, playerClass = UnitClass("player")
+    local playerSpecID = GetUnitSpecID("player")
     self.playerKeys.full = NormalizeName(playerFull)
     self.playerKeys.short = NormalizeName(playerShort)
+    self.playerKeys.class = playerClass
+    self.playerKeys.specID = playerSpecID
 end
 
 local function GetCompactPartyAnchor(index)
@@ -1005,12 +1271,11 @@ function PartyOffCD:AcquireIcon(parent)
     icon.texture:SetAllPoints()
     icon.texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-    icon.border = icon:CreateTexture(nil, "OVERLAY")
-    icon.border:SetAllPoints()
-    icon.border:SetColorTexture(0, 0, 0, 0.45)
-
     icon.cooldown = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
     icon.cooldown:SetAllPoints()
+    if icon.cooldown.SetDrawSwipe then
+        icon.cooldown:SetDrawSwipe(false)
+    end
     if icon.cooldown.SetDrawBling then
         icon.cooldown:SetDrawBling(false)
     end
@@ -1054,6 +1319,11 @@ function PartyOffCD:ReleaseRowIcons(row)
         icon:SetParent(UIParent)
         icon.spellID = nil
         icon.baseCD = nil
+        icon:SetAlpha(1)
+        if icon.texture.SetDesaturated then
+            icon.texture:SetDesaturated(false)
+        end
+        icon.cooldown:SetCooldown(0, 0)
         icon.timeText:SetText("")
         icon.typeText:SetText("")
         tinsert(self.iconPool, icon)
@@ -1083,32 +1353,61 @@ end
 
 function PartyOffCD:GetSortedCooldowns(senderKey)
     local senderCooldowns = self.cooldowns[senderKey]
-    if not senderCooldowns then
-        return nil
-    end
-
     local now = GetTime()
     local entries = {}
+    local senderClass = self:GetSenderClass(senderKey)
+    local senderSpecID = self:GetSenderSpecID(senderKey)
 
-    for spellID, cooldownData in pairs(senderCooldowns) do
-        local endTime = type(cooldownData) == "table" and cooldownData.endTime or cooldownData
-        local duration = type(cooldownData) == "table" and cooldownData.duration or nil
-        local remaining = endTime - now
-        if remaining > 0 and self:IsSpellEnabled(spellID) then
+    for spellID in pairs(SPELLS) do
+        if self:IsSpellEnabled(spellID) then
             local meta = self:GetEffectiveMeta(senderKey, spellID)
-            if meta then
+            local passesClass = meta and (not senderClass or meta.class == senderClass)
+            local passesSpec = passesClass and (not meta.specs)
+            if passesClass and not passesSpec and meta.specs and senderSpecID then
+                for _, specValue in ipairs(meta.specs) do
+                    local allowedSpecID = ResolveSpecValue(meta.class, specValue)
+                    if allowedSpecID == senderSpecID then
+                        passesSpec = true
+                        break
+                    end
+                end
+            end
+
+            if passesClass and passesSpec then
+                local cooldownData = senderCooldowns and senderCooldowns[spellID] or nil
+                local endTime = cooldownData and (type(cooldownData) == "table" and cooldownData.endTime or cooldownData) or 0
+                local duration = cooldownData and (type(cooldownData) == "table" and cooldownData.duration or meta.cd) or meta.cd
+                local remaining = endTime - now
+                local isActive = remaining > 0
+
+                if not isActive then
+                    remaining = 0
+                    endTime = 0
+                    duration = meta.cd
+                end
+
                 entries[#entries + 1] = {
                     spellID = spellID,
                     endTime = endTime,
                     remaining = remaining,
                     meta = meta,
-                    duration = duration or meta.cd,
+                    duration = duration,
+                    isActive = isActive,
                 }
             end
         end
     end
 
     table.sort(entries, function(a, b)
+        if a.meta.type ~= b.meta.type then
+            return a.meta.type == "OFF"
+        end
+        if a.meta.class ~= b.meta.class then
+            return tostring(a.meta.class) < tostring(b.meta.class)
+        end
+        if a.meta.cd ~= b.meta.cd then
+            return a.meta.cd < b.meta.cd
+        end
         if a.remaining == b.remaining then
             return a.spellID < b.spellID
         end
@@ -1148,6 +1447,7 @@ function PartyOffCD:RenderRow(row, rosterEntry)
     row:Show()
     self:AnchorRow(row, row.index)
 
+    local previousEntry = nil
     for iconIndex, entry in ipairs(entries) do
         local icon = self:AcquireIcon(row)
         local _, texture = SafeGetSpellInfo(entry.spellID)
@@ -1155,16 +1455,34 @@ function PartyOffCD:RenderRow(row, rosterEntry)
         icon.spellID = entry.spellID
         icon.baseCD = entry.meta.cd
         icon.texture:SetTexture(texture or 134400)
-        icon.timeText:SetText(FormatRemaining(entry.remaining))
         icon.typeText:SetText("")
-        icon.cooldown:SetCooldown(entry.endTime - entry.duration, entry.duration)
+        if entry.isActive then
+            icon:SetAlpha(1)
+            if icon.texture.SetDesaturated then
+                icon.texture:SetDesaturated(false)
+            end
+            icon.timeText:SetText(FormatRemaining(entry.remaining))
+            icon.cooldown:SetCooldown(entry.endTime - entry.duration, entry.duration)
+        else
+            icon:SetAlpha(0.55)
+            if icon.texture.SetDesaturated then
+                icon.texture:SetDesaturated(true)
+            end
+            icon.timeText:SetText("")
+            icon.cooldown:SetCooldown(0, 0)
+        end
         if iconIndex == 1 then
             icon:SetPoint("RIGHT", row, "RIGHT", 0, 0)
         else
-            icon:SetPoint("RIGHT", row.icons[iconIndex - 1], "LEFT", -ICON_SPACING, 0)
+            local spacing = ICON_SPACING
+            if previousEntry and previousEntry.meta.type ~= entry.meta.type then
+                spacing = ICON_SPACING + 8
+            end
+            icon:SetPoint("RIGHT", row.icons[iconIndex - 1], "LEFT", -spacing, 0)
         end
 
         row.icons[iconIndex] = icon
+        previousEntry = entry
     end
 end
 
@@ -1278,10 +1596,6 @@ function PartyOffCD:CreatePanel()
         local _, texture = SafeGetSpellInfo(spellID)
         button.texture:SetTexture(texture or 134400)
 
-        local overlay = button:CreateTexture(nil, "OVERLAY")
-        overlay:SetAllPoints()
-        overlay:SetColorTexture(0, 0, 0, 0.2)
-
         button.spellID = spellID
         button:RegisterForClicks("LeftButtonUp")
         button:SetScript("OnClick", function(selfButton)
@@ -1380,7 +1694,7 @@ function PartyOffCD:CreateConfigPanel()
 
     local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     instructions:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -86)
-    instructions:SetText("Edit any spell row to set your personal CD. Save syncs it automatically to the group.")
+    instructions:SetText("Use + to add a spell to that class. Edit/Save changes your personal CD and syncs it automatically.")
 
     local scrollFrame = CreateFrame("ScrollFrame", "PartyOffCDConfigScrollFrame", frame, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -110)
@@ -1447,7 +1761,64 @@ function PartyOffCD:RefreshConfigPanel()
             header:SetText(self:GetClassLabel(classToken))
             self.configRows[#self.configRows + 1] = header
 
+            local addButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+            addButton:SetSize(22, 18)
+            addButton:SetPoint("TOPLEFT", content, "TOPLEFT", 230, y + 1)
+            addButton:SetText(self.classAddEditorState[classToken] and "-" or "+")
+            addButton:SetScript("OnClick", function()
+                PartyOffCD.classAddEditorState[classToken] = not PartyOffCD.classAddEditorState[classToken]
+                PartyOffCD:RefreshConfigPanel()
+            end)
+            self.configRows[#self.configRows + 1] = addButton
+
             y = y - 26
+
+            if self.classAddEditorState[classToken] then
+                local spellIDBox = CreateNumericEditBox(nil, content, 52, 8)
+                spellIDBox:SetPoint("TOPLEFT", content, "TOPLEFT", 20, y)
+                spellIDBox:SetText("")
+                self.configRows[#self.configRows + 1] = spellIDBox
+
+                local spellIDLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                spellIDLabel:SetPoint("LEFT", spellIDBox, "RIGHT", 4, 0)
+                spellIDLabel:SetText("ID")
+                self.configRows[#self.configRows + 1] = spellIDLabel
+
+                local cdBox = CreateNumericEditBox(nil, content, 38, 5)
+                cdBox:SetPoint("LEFT", spellIDLabel, "RIGHT", 10, 0)
+                cdBox:SetText("90")
+                self.configRows[#self.configRows + 1] = cdBox
+
+                local cdLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                cdLabel:SetPoint("LEFT", cdBox, "RIGHT", 4, 0)
+                cdLabel:SetText("CD")
+                self.configRows[#self.configRows + 1] = cdLabel
+
+                local typeButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+                typeButton:SetSize(42, 18)
+                typeButton:SetPoint("LEFT", cdLabel, "RIGHT", 10, 0)
+                typeButton:SetText("OFF")
+                typeButton.currentType = "OFF"
+                typeButton:SetScript("OnClick", function(selfButton)
+                    selfButton.currentType = selfButton.currentType == "OFF" and "DEF" or "OFF"
+                    selfButton:SetText(selfButton.currentType)
+                end)
+                self.configRows[#self.configRows + 1] = typeButton
+
+                local saveNewButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+                saveNewButton:SetSize(42, 18)
+                saveNewButton:SetPoint("LEFT", typeButton, "RIGHT", 6, 0)
+                saveNewButton:SetText("Save")
+                saveNewButton:SetScript("OnClick", function()
+                    if PartyOffCD:AddCustomSpell(classToken, spellIDBox:GetText(), cdBox:GetText(), typeButton.currentType) then
+                        PartyOffCD.classAddEditorState[classToken] = false
+                        PartyOffCD:RefreshConfigPanel()
+                    end
+                end)
+                self.configRows[#self.configRows + 1] = saveNewButton
+
+                y = y - 24
+            end
 
             for _, spellID in ipairs(spellList) do
                 local spellName, texture = SafeGetSpellInfo(spellID)
@@ -1473,7 +1844,7 @@ function PartyOffCD:RefreshConfigPanel()
                 local playerOverride = self:GetPlayerOverride(spellID, self:GetPlayerCanonical())
                 local customSuffix = meta.custom and ", custom" or ""
                 local overrideSuffix = playerOverride and ", override" or ""
-                label:SetWidth(170)
+                label:SetWidth(155)
                 label:SetJustifyH("LEFT")
                 label:SetText(string.format("%s (%ss, id %d%s%s)", spellName or ("Spell " .. spellID), meta.cd, spellID, customSuffix, overrideSuffix))
                 if self.db.classEnabled[classToken] == false then
@@ -1485,19 +1856,19 @@ function PartyOffCD:RefreshConfigPanel()
 
                 local editButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
                 editButton:SetSize(40, 18)
-                editButton:SetPoint("TOPLEFT", content, "TOPLEFT", 230, y + 1)
+                editButton:SetPoint("TOPLEFT", content, "TOPLEFT", 215, y + 1)
                 editButton:SetText("Edit")
                 self.configRows[#self.configRows + 1] = editButton
 
                 local editBox = CreateNumericEditBox(nil, content, 34, 5)
-                editBox:SetPoint("TOPLEFT", content, "TOPLEFT", 274, y)
+                editBox:SetPoint("TOPLEFT", content, "TOPLEFT", 259, y)
                 editBox:SetText(tostring(meta.cd))
                 editBox:Hide()
                 self.configRows[#self.configRows + 1] = editBox
 
                 local saveButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
                 saveButton:SetSize(42, 18)
-                saveButton:SetPoint("TOPLEFT", content, "TOPLEFT", 314, y + 1)
+                saveButton:SetPoint("TOPLEFT", content, "TOPLEFT", 299, y + 1)
                 saveButton:SetText("Save")
                 saveButton:Hide()
                 self.configRows[#self.configRows + 1] = saveButton
@@ -1665,7 +2036,7 @@ function PartyOffCD:PrintConfig()
     DebugPrint("Spells activos: " .. tostring(self:GetEnabledSpellCount()) .. "/" .. tostring(self:GetSupportedSpellCount()))
     DebugPrint("Panel: " .. panelShown .. " | Config: " .. configShown .. " | Minimap: " .. minimapShown)
     DebugPrint("Comandos: /pocd use <spellID>, /pocd timer <spellID> <seg>, /pocd test, /pocd panel, /pocd config")
-    DebugPrint("UI: Usa Edit y Save en cada spell para guardar tu CD personal y sincronizarlo.")
+    DebugPrint("UI: Usa + por clase para agregar spells, y Edit/Save por fila para guardar tu CD personal.")
 end
 
 function PartyOffCD:GetSupportedSpellCount()
@@ -1771,6 +2142,7 @@ function PartyOffCD:InitializeDB()
                     type = meta.type,
                     class = meta.class,
                     custom = not BASE_SPELLS[spellID],
+                    specs = meta.specs or (BASE_SPELLS[spellID] and BASE_SPELLS[spellID].specs) or nil,
                 }
             end
         end
@@ -1787,6 +2159,7 @@ function PartyOffCD:InitializeDB()
                             type = meta.type,
                             class = meta.class,
                             custom = true,
+                            specs = meta.specs,
                         }
                     end
 
@@ -1818,6 +2191,7 @@ function PartyOffCD:Initialize()
 
     if not self.trackerTicker then
         self.trackerTicker = C_Timer.NewTicker(UPDATE_INTERVAL, function()
+            PartyOffCD:SyncLocalRealCooldowns()
             PartyOffCD:RefreshTracker()
         end)
     end
@@ -1830,6 +2204,7 @@ function PartyOffCD:Initialize()
     self:RegisterEvent("GROUP_ROSTER_UPDATE")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
     self:RegisterEvent("CHAT_MSG_ADDON")
+    self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 
     self:RefreshPanelButtons()
     self:RefreshConfigPanel()
@@ -1856,6 +2231,14 @@ PartyOffCD:SetScript("OnEvent", function(_, event, ...)
 
     if event == "CHAT_MSG_ADDON" then
         PartyOffCD:HandleAddonMessage(...)
+        return
+    end
+
+    if event == "UNIT_SPELLCAST_SUCCEEDED" then
+        local unit, _, spellID = ...
+        if unit == "player" then
+            PartyOffCD:HandleLocalSpellcastSucceeded(spellID)
+        end
     end
 end)
 
@@ -1869,6 +2252,8 @@ PartyOffCD notes:
    [spellID] = { cd = <seconds>, type = "OFF" or "DEF", class = "<CLASS_TOKEN>" }
    Example:
    [31884] = { cd = 120, type = "OFF", class = "PALADIN" }
+   Optional spec filter:
+   specs = { "FROST" } or specs = { "ARMS", "FURY" }
    If you want the spell on the clickable panel, also add its spellID to PANEL_SPELLS.
    New spells appear automatically in the config panel under their class.
    The config panel can also overwrite existing base spells with your own CD/type/class values.
@@ -1894,6 +2279,9 @@ PartyOffCD notes:
    Right click the minimap button opens the quick report panel.
    Drag the minimap button to move it around the minimap.
    The minimap icon is always enabled.
+   Each class row has a + button to add a new spell to that class.
+   Pick SpellID, CD, choose OFF/DEF, then Save.
+   Custom spells are stored per character and synced to the group.
    Each spell row has an Edit button.
    Click Edit, type your personal CD in seconds, then click Save.
    Save stores it in your per-character SavedVariables and syncs it to the group.
@@ -1904,4 +2292,5 @@ PartyOffCD notes:
    Example: /pocd timer 31884 45
    This updates your own running timer and notifies the group.
    The addon also requests and rebroadcasts custom overrides whenever you join or change group.
+   The tracker now always shows all enabled spells; use the checkboxes to hide spells you do not want to see.
 ]]
