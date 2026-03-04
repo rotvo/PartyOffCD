@@ -8,7 +8,7 @@ local MESSAGE_VERSION = "v1"
 local DUPLICATE_WINDOW = 1.5
 local UPDATE_INTERVAL = 0.2
 local REAL_SYNC_INTERVAL = 2.0
-local REAL_SYNC_THRESHOLD = 1.5
+local REAL_SYNC_THRESHOLD = 0.5
 local MAX_TRACKED_ROWS = 5
 local ICON_SIZE = 30
 local ICON_SPACING = 3
@@ -445,6 +445,17 @@ local function NormalizeName(name)
     end
 
     return string.lower(name)
+end
+
+local function ApplyLightOutline(fontString)
+    if not fontString or not fontString.GetFont or not fontString.SetFont then
+        return
+    end
+
+    local fontPath, fontSize = fontString:GetFont()
+    if fontPath and fontSize then
+        fontString:SetFont(fontPath, fontSize, "OUTLINE")
+    end
 end
 
 local function GetNextSpellType(currentType)
@@ -1275,6 +1286,9 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
         end
 
         local bucket = self:GetOverrideBucket(senderKey, true)
+        local previous = bucket[spellID]
+        local previousCooldown = previous and tonumber(previous.cd) or nil
+        local sameOverride = previous and previousCooldown == cooldown and previous.type == spellType and previous.class == classToken
         bucket[spellID] = {
             cd = cooldown,
             type = spellType,
@@ -1283,6 +1297,7 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
             specs = (BASE_SPELLS[spellID] and BASE_SPELLS[spellID].specs) or (SPELLS[spellID] and SPELLS[spellID].specs) or nil,
         }
 
+        local addedGlobalSpell = false
         if not SPELLS[spellID] then
             SPELLS[spellID] = {
                 cd = cooldown,
@@ -1290,11 +1305,17 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
                 class = classToken,
                 custom = true,
             }
+            addedGlobalSpell = true
         end
 
-        self:NotifyOverrideReceived(sender, spellID, bucket[spellID])
-        self:RefreshConfigPanel()
-        self:RefreshTracker()
+        if not sameOverride then
+            self:NotifyOverrideReceived(sender, spellID, bucket[spellID])
+        end
+
+        if not sameOverride or addedGlobalSpell then
+            self:RefreshConfigPanel()
+            self:RefreshTracker()
+        end
         return
     end
 
@@ -1459,6 +1480,7 @@ function PartyOffCD:AcquireIcon(parent)
     icon.timeText = icon:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     icon.timeText:SetPoint("BOTTOM", icon, "BOTTOM", 0, 2)
     icon.timeText:SetShadowOffset(1, -1)
+    ApplyLightOutline(icon.timeText)
 
     icon.typeText = icon:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     icon.typeText:SetPoint("TOP", icon, "TOP", 0, -2)
@@ -1751,6 +1773,7 @@ function PartyOffCD:CreateInterruptRow(index)
     row.timeText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.timeText:SetPoint("RIGHT", row, "RIGHT", -6, 0)
     row.timeText:SetJustifyH("RIGHT")
+    ApplyLightOutline(row.timeText)
 
     self.interruptRows[index] = row
     return row
