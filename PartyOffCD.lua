@@ -12,9 +12,19 @@ local REAL_SYNC_THRESHOLD = 1.5
 local MAX_TRACKED_ROWS = 5
 local ICON_SIZE = 30
 local ICON_SPACING = 3
+local INTERRUPT_BAR_WIDTH = 190
+local INTERRUPT_ROW_HEIGHT = 22
+local INTERRUPT_ICON_SIZE = 18
 local FALLBACK_X = 210
 local FALLBACK_Y = 120
 local MINIMAP_RADIUS = 96
+
+local SPELL_TYPES = { "OFF", "DEF", "INT" }
+local SPELL_TYPE_PRIORITY = {
+    OFF = 1,
+    DEF = 2,
+    INT = 3,
+}
 
 local CLASS_ORDER = {
     "PALADIN",
@@ -126,49 +136,75 @@ local SPEC_ALIASES = {
 }
 
 local SPELLS = {
+    -- PALADIN
     [31884] = { cd = 120, type = "OFF", class = "PALADIN" }, -- Avenging Wrath
+    [96231] = { cd = 15, type = "INT", class = "PALADIN" }, -- Rebuke
     [216331] = { cd = 120, type = "OFF", class = "PALADIN" }, -- Avenging Crusader
     [642] = { cd = 240, type = "DEF", class = "PALADIN" }, -- Divine Shield
     [6940] = { cd = 120, type = "DEF", class = "PALADIN" }, -- Blessing of Sacrifice
     [31850] = { cd = 120, type = "DEF", class = "PALADIN" }, -- Ardent Defender
     [31821] = { cd = 180, type = "DEF", class = "PALADIN" }, -- Aura Mastery
+
+    -- EVOKER
     [375087] = { cd = 120, type = "OFF", class = "EVOKER", specs = { "DEVASTATION" } }, -- Dragonrage
+    [351338] = { cd = 40, type = "INT", class = "EVOKER" }, -- Quell
     [370553] = { cd = 120, type = "OFF", class = "EVOKER" }, -- Tip the Scales
     [357210] = { cd = 120, type = "OFF", class = "EVOKER" }, -- Deep Breath
     [363916] = { cd = 90, type = "DEF", class = "EVOKER" }, -- Obsidian Scales
     [374227] = { cd = 90, type = "DEF", class = "EVOKER" }, -- Zephyr
+
+    -- MAGE
     [190319] = { cd = 120, type = "OFF", class = "MAGE", specs = { "FIRE" } }, -- Combustion
+    [2139] = { cd = 24, type = "INT", class = "MAGE" }, -- Counterspell
     [12042] = { cd = 90, type = "OFF", class = "MAGE", specs = { "ARCANE" } }, -- Arcane Power
     [12472] = { cd = 180, type = "OFF", class = "MAGE", specs = { "FROST" } }, -- Icy Veins
     [55342] = { cd = 120, type = "OFF", class = "MAGE" }, -- Mirror Image
     [45438] = { cd = 240, type = "DEF", class = "MAGE" }, -- Ice Block
+
+    -- PRIEST
     [10060] = { cd = 120, type = "OFF", class = "PRIEST" }, -- Power Infusion
+    [15487] = { cd = 45, type = "INT", class = "PRIEST", specs = { "SHADOW" } }, -- Silence
     [228260] = { cd = 90, type = "OFF", class = "PRIEST", specs = { "SHADOW" } }, -- Void Eruption
     [200183] = { cd = 120, type = "OFF", class = "PRIEST", specs = { "HOLY" } }, -- Apotheosis
     [47585] = { cd = 120, type = "DEF", class = "PRIEST", specs = { "SHADOW" } }, -- Dispersion
     [33206] = { cd = 180, type = "DEF", class = "PRIEST", specs = { "DISC" } }, -- Pain Suppression
     [47788] = { cd = 180, type = "DEF", class = "PRIEST", specs = { "HOLY" } }, -- Guardian Spirit
     [19236] = { cd = 90, type = "DEF", class = "PRIEST" }, -- Desperate Prayer
+
+    -- ROGUE
     [13750] = { cd = 180, type = "OFF", class = "ROGUE", specs = { "OUTLAW" } }, -- Adrenaline Rush
+    [1766] = { cd = 15, type = "INT", class = "ROGUE" }, -- Kick
     [121471] = { cd = 180, type = "OFF", class = "ROGUE" }, -- Shadow Blades
     [31224] = { cd = 120, type = "DEF", class = "ROGUE" }, -- Cloak of Shadows
     [5277] = { cd = 120, type = "DEF", class = "ROGUE" }, -- Evasion
+
+    -- HUNTER
     [19574] = { cd = 90, type = "OFF", class = "HUNTER", specs = { "BM" } }, -- Bestial Wrath
+    [147362] = { cd = 24, type = "INT", class = "HUNTER", specs = { "BM", "MM" } }, -- Counter Shot
+    [187707] = { cd = 15, type = "INT", class = "HUNTER", specs = { "SV" } }, -- Muzzle
     [288613] = { cd = 120, type = "OFF", class = "HUNTER", specs = { "MM" } }, -- Trueshot
     [266779] = { cd = 120, type = "OFF", class = "HUNTER", specs = { "SV" } }, -- Coordinated Assault
     [186265] = { cd = 180, type = "DEF", class = "HUNTER" }, -- Aspect of the Turtle
     [109304] = { cd = 120, type = "DEF", class = "HUNTER" }, -- Exhilaration
+
+    -- SHAMAN
     [191634] = { cd = 60, type = "OFF", class = "SHAMAN", specs = { "ELEMENTAL" } }, -- Stormkeeper
+    [57994] = { cd = 12, type = "INT", class = "SHAMAN" }, -- Wind Shear
     [321530] = { cd = 300, type = "OFF", class = "SHAMAN" }, -- Bloodlust
     [114050] = { cd = 180, type = "OFF", class = "SHAMAN" }, -- Ascendance
     [198067] = { cd = 150, type = "OFF", class = "SHAMAN" }, -- Fire Elemental
     [108271] = { cd = 90, type = "DEF", class = "SHAMAN" }, -- Astral Shift
+
+    -- MONK
     [115080] = { cd = 120, type = "OFF", class = "MONK", specs = { "WINDWALKER" } }, -- Touch of Death
+    [116705] = { cd = 15, type = "INT", class = "MONK" }, -- Spear Hand Strike
     [137639] = { cd = 90, type = "OFF", class = "MONK", specs = { "WINDWALKER" } }, -- Storm, Earth, and Fire
     [123904] = { cd = 120, type = "OFF", class = "MONK", specs = { "WINDWALKER" } }, -- Invoke Xuen, the White Tiger
     [115203] = { cd = 180, type = "DEF", class = "MONK" }, -- Fortifying Brew
     [122783] = { cd = 90, type = "DEF", class = "MONK" }, -- Diffuse Magic
     [122278] = { cd = 120, type = "DEF", class = "MONK" }, -- Dampen Harm
+
+    -- WARLOCK
     [1122] = { cd = 180, type = "OFF", class = "WARLOCK", specs = { "DESTRO" } }, -- Summon Infernal
     [205180] = { cd = 120, type = "OFF", class = "WARLOCK", specs = { "DEMO" } }, -- Summon Darkglare
     [113860] = { cd = 120, type = "OFF", class = "WARLOCK", specs = { "AFFLICTION" } }, -- Dark Soul: Misery
@@ -176,24 +212,38 @@ local SPELLS = {
     [1276672] = { cd = 120, type = "OFF", class = "WARLOCK" }, -- Dark Soul: Summon Doomguard
     [108416] = { cd = 60, type = "DEF", class = "WARLOCK" }, -- Dark Pact
     [104773] = { cd = 180, type = "DEF", class = "WARLOCK" }, -- Unending Resolve
+    [119914] = { cd = 30, type = "INT", class = "WARLOCK", specs = { "DEMO" } }, -- Axe Toss
+    [119910] = { cd = 24, type = "INT", class = "WARLOCK" }, -- Spell Lock
+
+    -- WARRIOR
     [97462] = { cd = 180, type = "DEF", class = "WARRIOR" }, -- Rallying Cry
+    [6552] = { cd = 15, type = "INT", class = "WARRIOR" }, -- Pummel
     [871] = { cd = 240, type = "DEF", class = "WARRIOR" }, -- Shield Wall
     [118038] = { cd = 120, type = "DEF", class = "WARRIOR" }, -- Die by the Sword
     [1719] = { cd = 90, type = "OFF", class = "WARRIOR", specs = { "FURY" } }, -- Recklessness
     [107574] = { cd = 90, type = "OFF", class = "WARRIOR", specs = { "ARMS", "FURY" } }, -- Avatar
+
+    -- DRUID
     [22812] = { cd = 60, type = "DEF", class = "DRUID" }, -- Barkskin
+    [106839] = { cd = 15, type = "INT", class = "DRUID" }, -- Skull Bash
     [61336] = { cd = 180, type = "DEF", class = "DRUID" }, -- Survival Instincts
     [102342] = { cd = 90, type = "DEF", class = "DRUID" }, -- Ironbark
     [106951] = { cd = 180, type = "OFF", class = "DRUID", specs = { "FERAL" } }, -- Berserk
     [194223] = { cd = 180, type = "OFF", class = "DRUID", specs = { "BALANCE" } }, -- Celestial Alignment
     [22842] = { cd = 36, type = "DEF", class = "DRUID", specs = { "GUARDIAN" } }, -- Frenzied Regeneration
+
+    -- DEATH KNIGHT
     [48792] = { cd = 120, type = "DEF", class = "DEATHKNIGHT" }, -- Icebound Fortitude
+    [47528] = { cd = 15, type = "INT", class = "DEATHKNIGHT" }, -- Mind Freeze
     [48707] = { cd = 40, type = "DEF", class = "DEATHKNIGHT" }, -- Anti-Magic Shell
     [51271] = { cd = 60, type = "OFF", class = "DEATHKNIGHT", specs = { "FROST" } }, -- Pillar of Frost
     [47568] = { cd = 120, type = "OFF", class = "DEATHKNIGHT", specs = { "FROST" } }, -- Empower Rune Weapon
     [1233448] = { cd = 45, type = "OFF", class = "DEATHKNIGHT", specs = { "UNHOLY" } }, -- User provided Midnight DK CD
     [42650] = { cd = 90, type = "OFF", class = "DEATHKNIGHT", specs = { "UNHOLY" } }, -- Army of the Dead
+
+    -- DEMON HUNTER
     [196555] = { cd = 120, type = "DEF", class = "DEMONHUNTER" }, -- Netherwalk
+    [183752] = { cd = 15, type = "INT", class = "DEMONHUNTER" }, -- Disrupt
     [191427] = { cd = 180, type = "OFF", class = "DEMONHUNTER", specs = { "HAVOC" } }, -- Metamorphosis
     [198589] = { cd = 60, type = "DEF", class = "DEMONHUNTER", specs = { "HAVOC" } }, -- Blur
     [196718] = { cd = 300, type = "DEF", class = "DEMONHUNTER", specs = { "HAVOC" } }, -- Darkness
@@ -233,6 +283,10 @@ local DB_DEFAULTS = {
     configRelativePoint = "CENTER",
     configX = 0,
     configY = 0,
+    interruptPoint = "CENTER",
+    interruptRelativePoint = "CENTER",
+    interruptX = -260,
+    interruptY = 140,
     minimap = {
         angle = 220,
     },
@@ -253,6 +307,7 @@ PartyOffCD.db = nil
 PartyOffCD.trackerTicker = nil
 PartyOffCD.configRows = {}
 PartyOffCD.classAddEditorState = {}
+PartyOffCD.interruptRows = {}
 PartyOffCD.lastOverrideBroadcast = 0
 PartyOffCD.lastRealtimeSync = 0
 PartyOffCD.lastLocalReport = {}
@@ -383,6 +438,16 @@ local function NormalizeName(name)
     end
 
     return string.lower(name)
+end
+
+local function GetNextSpellType(currentType)
+    for index, spellType in ipairs(SPELL_TYPES) do
+        if spellType == currentType then
+            return SPELL_TYPES[(index % #SPELL_TYPES) + 1]
+        end
+    end
+
+    return SPELL_TYPES[1]
 end
 
 local function CreateCheckbox(name, parent, labelText)
@@ -766,8 +831,8 @@ function PartyOffCD:AddCustomSpell(classToken, spellID, cooldown, spellType)
         return false
     end
 
-    if spellType ~= "OFF" and spellType ~= "DEF" then
-        DebugPrint("Tipo invalido. Usa OFF o DEF.")
+    if not SPELL_TYPE_PRIORITY[spellType] then
+        DebugPrint("Tipo invalido. Usa OFF, DEF o INT.")
         return false
     end
 
@@ -1123,7 +1188,7 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
         local spellType = valueB
         local classToken = valueC
 
-        if spellType ~= "OFF" and spellType ~= "DEF" then
+        if not SPELL_TYPE_PRIORITY[spellType] then
             return
         end
 
@@ -1351,7 +1416,7 @@ function PartyOffCD:GetRow(index)
     return self.rows[index] or self:CreateRow(index)
 end
 
-function PartyOffCD:GetSortedCooldowns(senderKey)
+function PartyOffCD:GetSortedCooldowns(senderKey, onlyType)
     local senderCooldowns = self.cooldowns[senderKey]
     local now = GetTime()
     local entries = {}
@@ -1361,8 +1426,9 @@ function PartyOffCD:GetSortedCooldowns(senderKey)
     for spellID in pairs(SPELLS) do
         if self:IsSpellEnabled(spellID) then
             local meta = self:GetEffectiveMeta(senderKey, spellID)
+            local passesType = meta and ((onlyType and meta.type == onlyType) or (not onlyType and meta.type ~= "INT"))
             local passesClass = meta and (not senderClass or meta.class == senderClass)
-            local passesSpec = passesClass and (not meta.specs)
+            local passesSpec = passesType and passesClass and (not meta.specs)
             if passesClass and not passesSpec and meta.specs and senderSpecID then
                 for _, specValue in ipairs(meta.specs) do
                     local allowedSpecID = ResolveSpecValue(meta.class, specValue)
@@ -1373,7 +1439,7 @@ function PartyOffCD:GetSortedCooldowns(senderKey)
                 end
             end
 
-            if passesClass and passesSpec then
+            if passesType and passesClass and passesSpec then
                 local cooldownData = senderCooldowns and senderCooldowns[spellID] or nil
                 local endTime = cooldownData and (type(cooldownData) == "table" and cooldownData.endTime or cooldownData) or 0
                 local duration = cooldownData and (type(cooldownData) == "table" and cooldownData.duration or meta.cd) or meta.cd
@@ -1399,8 +1465,15 @@ function PartyOffCD:GetSortedCooldowns(senderKey)
     end
 
     table.sort(entries, function(a, b)
+        if onlyType == "INT" then
+            if a.remaining == b.remaining then
+                return a.spellID < b.spellID
+            end
+            return a.remaining < b.remaining
+        end
+
         if a.meta.type ~= b.meta.type then
-            return a.meta.type == "OFF"
+            return (SPELL_TYPE_PRIORITY[a.meta.type] or 99) < (SPELL_TYPE_PRIORITY[b.meta.type] or 99)
         end
         if a.meta.class ~= b.meta.class then
             return tostring(a.meta.class) < tostring(b.meta.class)
@@ -1486,6 +1559,168 @@ function PartyOffCD:RenderRow(row, rosterEntry)
     end
 end
 
+function PartyOffCD:CreateInterruptFrame()
+    if self.interruptFrame then
+        return
+    end
+
+    local frame = CreateFrame("Frame", "PartyOffCDInterruptFrame", UIParent)
+    frame:SetSize(INTERRUPT_BAR_WIDTH, 32)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetClampedToScreen(true)
+    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStop", function(selfFrame)
+        selfFrame:StopMovingOrSizing()
+        local point, _, relativePoint, x, y = selfFrame:GetPoint(1)
+        PartyOffCD.db.interruptPoint = point
+        PartyOffCD.db.interruptRelativePoint = relativePoint
+        PartyOffCD.db.interruptX = x
+        PartyOffCD.db.interruptY = y
+    end)
+
+    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.10, 0.06, 0.18, 0.88)
+
+    local borderTop = frame:CreateTexture(nil, "BORDER")
+    borderTop:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    borderTop:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    borderTop:SetHeight(1)
+    borderTop:SetColorTexture(0.95, 0.82, 0.2, 0.9)
+
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    title:SetPoint("TOP", frame, "TOP", 0, -6)
+    title:SetText("Interrupts")
+    title:SetTextColor(1, 0.85, 0.15)
+
+    local emptyText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    emptyText:SetPoint("TOP", title, "BOTTOM", 0, -8)
+    emptyText:SetText("Drag to move")
+    emptyText:SetTextColor(0.75, 0.75, 0.75)
+    frame.emptyText = emptyText
+
+    local db = self.db or DB_DEFAULTS
+    frame:SetPoint(
+        db.interruptPoint or DB_DEFAULTS.interruptPoint,
+        UIParent,
+        db.interruptRelativePoint or DB_DEFAULTS.interruptRelativePoint,
+        db.interruptX or DB_DEFAULTS.interruptX,
+        db.interruptY or DB_DEFAULTS.interruptY
+    )
+
+    self.interruptFrame = frame
+end
+
+function PartyOffCD:CreateInterruptRow(index)
+    local row = CreateFrame("StatusBar", nil, self.interruptFrame)
+    row:SetSize(INTERRUPT_BAR_WIDTH - 12, INTERRUPT_ROW_HEIGHT)
+    row:SetMinMaxValues(0, 1)
+    row:SetValue(0)
+    row:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    row.index = index
+
+    row.bg = row:CreateTexture(nil, "BACKGROUND")
+    row.bg:SetAllPoints()
+    row.bg:SetColorTexture(0.05, 0.05, 0.05, 0.55)
+
+    row.iconBackdrop = row:CreateTexture(nil, "ARTWORK")
+    row.iconBackdrop:SetSize(INTERRUPT_ICON_SIZE + 2, INTERRUPT_ICON_SIZE + 2)
+    row.iconBackdrop:SetPoint("LEFT", row, "LEFT", 2, 0)
+    row.iconBackdrop:SetColorTexture(0.02, 0.02, 0.02, 0.95)
+
+    row.icon = row:CreateTexture(nil, "OVERLAY")
+    row.icon:SetSize(INTERRUPT_ICON_SIZE, INTERRUPT_ICON_SIZE)
+    row.icon:SetPoint("CENTER", row.iconBackdrop, "CENTER", 0, 0)
+    row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    row.nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.nameText:SetPoint("LEFT", row.iconBackdrop, "RIGHT", 6, 0)
+    row.nameText:SetJustifyH("LEFT")
+    row.nameText:SetWidth(110)
+
+    row.timeText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.timeText:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+    row.timeText:SetJustifyH("RIGHT")
+
+    self.interruptRows[index] = row
+    return row
+end
+
+function PartyOffCD:GetInterruptRow(index)
+    return self.interruptRows[index] or self:CreateInterruptRow(index)
+end
+
+function PartyOffCD:GetActiveInterruptEntry(senderKey)
+    local entries = self:GetSortedCooldowns(senderKey, "INT")
+    for _, entry in ipairs(entries) do
+        if entry.isActive then
+            return entry
+        end
+    end
+
+    return nil
+end
+
+function PartyOffCD:RenderInterruptRow(row, rosterEntry, entry)
+    local _, texture = SafeGetSpellInfo(entry.spellID)
+    local classColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[rosterEntry.class] or nil
+    local remaining = math.max(0, entry.remaining or 0)
+    local duration = math.max(1, entry.duration or entry.meta.cd or 1)
+
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", self.interruptFrame, "TOPLEFT", 6, -24 - ((row.index - 1) * (INTERRUPT_ROW_HEIGHT + 2)))
+    row:SetMinMaxValues(0, duration)
+    row:SetValue(remaining)
+    row.icon:SetTexture(texture or 134400)
+    row.nameText:SetText(rosterEntry.name or "?")
+    row.timeText:SetText(FormatRemaining(remaining))
+
+    if classColor then
+        row:SetStatusBarColor(classColor.r, classColor.g, classColor.b)
+    else
+        row:SetStatusBarColor(0.6, 0.45, 0.2)
+    end
+
+    row:Show()
+end
+
+function PartyOffCD:RefreshInterruptBar()
+    if not self.interruptFrame then
+        return
+    end
+
+    local activeCount = 0
+    for _, rosterEntry in ipairs(self.roster) do
+        local entry = self:GetActiveInterruptEntry(rosterEntry.key)
+        if entry then
+            activeCount = activeCount + 1
+            local row = self:GetInterruptRow(activeCount)
+            self:RenderInterruptRow(row, rosterEntry, entry)
+        end
+    end
+
+    for index = (activeCount + 1), #self.interruptRows do
+        self.interruptRows[index]:Hide()
+    end
+
+    if activeCount == 0 then
+        self.interruptFrame:SetHeight(44)
+        if self.interruptFrame.emptyText then
+            self.interruptFrame.emptyText:Show()
+        end
+        self.interruptFrame:Show()
+        return
+    end
+
+    if self.interruptFrame.emptyText then
+        self.interruptFrame.emptyText:Hide()
+    end
+    self.interruptFrame:SetHeight(28 + (activeCount * (INTERRUPT_ROW_HEIGHT + 2)))
+    self.interruptFrame:Show()
+end
+
 function PartyOffCD:RefreshTracker()
     self:PruneState()
 
@@ -1493,9 +1728,15 @@ function PartyOffCD:RefreshTracker()
         if self.trackerFrame then
             self.trackerFrame:Hide()
         end
+        if self.interruptFrame then
+            self.interruptFrame:Hide()
+        end
 
         for _, row in ipairs(self.rows) do
             self:ReleaseRowIcons(row)
+            row:Hide()
+        end
+        for _, row in ipairs(self.interruptRows) do
             row:Hide()
         end
         return
@@ -1507,10 +1748,17 @@ function PartyOffCD:RefreshTracker()
         if self.trackerFrame then
             self.trackerFrame:Hide()
         end
+        if self.interruptFrame then
+            self.interruptFrame:Hide()
+        end
+        for _, row in ipairs(self.interruptRows) do
+            row:Hide()
+        end
         return
     end
 
     self:CreateTrackerFrame()
+    self:CreateInterruptFrame()
     self.trackerFrame:Show()
 
     for index, entry in ipairs(self.roster) do
@@ -1523,6 +1771,8 @@ function PartyOffCD:RefreshTracker()
         self:ReleaseRowIcons(row)
         row:Hide()
     end
+
+    self:RefreshInterruptBar()
 end
 
 function PartyOffCD:RefreshPanelButtons()
@@ -1800,7 +2050,7 @@ function PartyOffCD:RefreshConfigPanel()
                 typeButton:SetText("OFF")
                 typeButton.currentType = "OFF"
                 typeButton:SetScript("OnClick", function(selfButton)
-                    selfButton.currentType = selfButton.currentType == "OFF" and "DEF" or "OFF"
+                    selfButton.currentType = GetNextSpellType(selfButton.currentType)
                     selfButton:SetText(selfButton.currentType)
                 end)
                 self.configRows[#self.configRows + 1] = typeButton
@@ -2185,6 +2435,7 @@ function PartyOffCD:Initialize()
     end
 
     self:CreateTrackerFrame()
+    self:CreateInterruptFrame()
     self:CreatePanel()
     self:CreateConfigPanel()
     self:CreateMinimapButton()
@@ -2249,7 +2500,7 @@ PartyOffCD notes:
 
 1) How to extend the spell table
    Add a new entry to SPELLS using:
-   [spellID] = { cd = <seconds>, type = "OFF" or "DEF", class = "<CLASS_TOKEN>" }
+   [spellID] = { cd = <seconds>, type = "OFF" / "DEF" / "INT", class = "<CLASS_TOKEN>" }
    Example:
    [31884] = { cd = 120, type = "OFF", class = "PALADIN" }
    Optional spec filter:
@@ -2280,7 +2531,7 @@ PartyOffCD notes:
    Drag the minimap button to move it around the minimap.
    The minimap icon is always enabled.
    Each class row has a + button to add a new spell to that class.
-   Pick SpellID, CD, choose OFF/DEF, then Save.
+   Pick SpellID, CD, choose OFF/DEF/INT, then Save.
    Custom spells are stored per character and synced to the group.
    Each spell row has an Edit button.
    Click Edit, type your personal CD in seconds, then click Save.
