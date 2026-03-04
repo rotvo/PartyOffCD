@@ -230,9 +230,9 @@ local SPELLS = {
     [102342] = { cd = 90, type = "DEF", class = "DRUID" }, -- Ironbark
     [106951] = { cd = 180, type = "OFF", class = "DRUID", specs = { "FERAL" } }, -- Berserk
     [194223] = { cd = 180, type = "OFF", class = "DRUID", specs = { "BALANCE" } }, -- Celestial Alignment
-    [204066] = { cd = 180, type = "DEF", class = "DRUID" }, -- Lunar beam
-    [204066] = { cd = 180, type = "DEF", class = "DRUID" }, -- Lunar beam
-    [22842] = { cd = 36, type = "DEF", class = "DRUID" }, -- Frenzied Regeneration
+    [204066] = { cd = 180, type = "DEF", class = "DRUID", specs = { "GUARDIAN" } }, -- Lunar beam
+    [22842] = { cd = 36, type = "DEF", class = "DRUID", specs = { "GUARDIAN" } }, -- Frenzied Regeneration
+    [102558] = { cd = 36, type = "DEF", class = "DRUID", specs = { "GUARDIAN" } },--[Incarnation: Guardian of Ursoc]
 
     -- DEATH KNIGHT
     [48792] = { cd = 120, type = "DEF", class = "DEATHKNIGHT" }, -- Icebound Fortitude
