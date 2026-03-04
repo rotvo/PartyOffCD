@@ -204,7 +204,7 @@ local SPELLS = {
     [122783] = { cd = 90, type = "DEF", class = "MONK" }, -- Diffuse Magic
     [132578] = { cd = 120, type = "DEF", class = "MONK" },--[Invoke Niuzao, the Black Ox]
     [115399] = { cd = 120, type = "DEF", class = "MONK" },--[Black Ox Brew]
-    [1241058] = { cd = 45, type = "DEF", class = "MONK" },--[Celestial Infusion]
+    [1241059] = { cd = 45, type = "DEF", class = "MONK" },--[Celestial Infusion]
 
     -- WARLOCK
     [1122] = { cd = 180, type = "OFF", class = "WARLOCK", specs = { "DESTRO" } }, -- Summon Infernal
