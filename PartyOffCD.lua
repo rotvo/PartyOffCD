@@ -207,6 +207,7 @@ local SPELLS = {
     [116844] = { cd = 45, type = "DEF", class = "MONK" },--[Ring of Peace]
     [119381] = { cd = 50, type = "DEF", class = "MONK" },--[Leg Sweep]
     [119582] = { cd = 20, type = "DEF", class = "MONK" },--[Purifying Brew]
+    [1241059] = { cd = 20, type = "DEF", class = "MONK" },--[Celestial Infusion]
     -- WARLOCK
     [1122] = { cd = 180, type = "OFF", class = "WARLOCK", specs = { "DESTRO" } }, -- Summon Infernal
     [205180] = { cd = 120, type = "OFF", class = "WARLOCK", specs = { "DEMO" } }, -- Summon Darkglare
