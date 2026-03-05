@@ -483,17 +483,37 @@ function PartyOffCD:CreateInterruptFrame()
     local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetColorTexture(0.10, 0.06, 0.18, 0.88)
+    frame.bg = bg
 
     local borderTop = frame:CreateTexture(nil, "BORDER")
     borderTop:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
     borderTop:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
     borderTop:SetHeight(1)
     borderTop:SetColorTexture(0.95, 0.82, 0.2, 0.9)
+    frame.borderTop = borderTop
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     title:SetPoint("TOP", frame, "TOP", 0, -6)
     title:SetText("Interrupts")
     title:SetTextColor(1, 0.85, 0.15)
+    frame.title = title
+
+    local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
+    closeButton:SetScript("OnClick", function()
+        PartyOffCD:SetInterruptHidden(true)
+    end)
+    frame.closeButton = closeButton
+
+    local lockButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    lockButton:SetSize(18, 18)
+    lockButton:SetPoint("RIGHT", closeButton, "LEFT", -2, 0)
+    lockButton:SetText("L")
+    lockButton:SetScript("OnClick", function()
+        PartyOffCD:SetInterruptLocked(true)
+        PartyOffCD:RefreshConfigPanel()
+    end)
+    frame.lockButton = lockButton
 
     local emptyText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     emptyText:SetPoint("TOP", title, "BOTTOM", 0, -8)
@@ -511,6 +531,47 @@ function PartyOffCD:CreateInterruptFrame()
     )
 
     self.interruptFrame = frame
+    self:UpdateInterruptFrameStyle()
+end
+
+function PartyOffCD:SetInterruptHidden(hidden)
+    self.db.interruptHidden = hidden and true or false
+    self:RefreshInterruptBar()
+end
+
+function PartyOffCD:SetInterruptLocked(locked)
+    self.db.interruptLocked = locked and true or false
+    self:UpdateInterruptFrameStyle()
+    self:RefreshInterruptBar()
+end
+
+function PartyOffCD:UpdateInterruptFrameStyle()
+    if not self.interruptFrame then
+        return
+    end
+
+    local locked = self.db and self.db.interruptLocked
+    self.interruptFrame:SetMovable(not locked)
+    self.interruptFrame:EnableMouse(not locked)
+
+    if self.interruptFrame.bg then
+        self.interruptFrame.bg:SetShown(not locked)
+    end
+    if self.interruptFrame.borderTop then
+        self.interruptFrame.borderTop:SetShown(not locked)
+    end
+    if self.interruptFrame.title then
+        self.interruptFrame.title:SetShown(not locked)
+    end
+    if self.interruptFrame.closeButton then
+        self.interruptFrame.closeButton:SetShown(not locked)
+    end
+    if self.interruptFrame.lockButton then
+        self.interruptFrame.lockButton:SetShown(not locked)
+    end
+    if self.interruptFrame.emptyText then
+        self.interruptFrame.emptyText:SetShown(not locked)
+    end
 end
 
 function PartyOffCD:CreateInterruptRow(index)
@@ -574,8 +635,9 @@ function PartyOffCD:RenderInterruptRow(row, rosterEntry, entry)
     local remaining = math.max(0, entry.remaining or 0)
     local duration = math.max(1, entry.duration or entry.meta.cd or 1)
 
+    local topOffset = (self.db and self.db.interruptLocked) and -4 or -24
     row:ClearAllPoints()
-    row:SetPoint("TOPLEFT", self.interruptFrame, "TOPLEFT", 6, -24 - ((row.index - 1) * (INTERRUPT_ROW_HEIGHT + 2)))
+    row:SetPoint("TOPLEFT", self.interruptFrame, "TOPLEFT", 6, topOffset - ((row.index - 1) * (INTERRUPT_ROW_HEIGHT + 2)))
     row:SetMinMaxValues(0, duration)
     row:SetValue(remaining)
     row.icon:SetTexture(texture or 134400)
@@ -596,6 +658,16 @@ function PartyOffCD:RefreshInterruptBar()
         return
     end
 
+    self:UpdateInterruptFrameStyle()
+
+    if self.db and self.db.interruptHidden then
+        self.interruptFrame:Hide()
+        for _, row in ipairs(self.interruptRows) do
+            row:Hide()
+        end
+        return
+    end
+
     local activeCount = 0
     for _, rosterEntry in ipairs(self.roster) do
         if self:HasAddon(rosterEntry.key) then
@@ -613,6 +685,10 @@ function PartyOffCD:RefreshInterruptBar()
     end
 
     if activeCount == 0 then
+        if self.db and self.db.interruptLocked then
+            self.interruptFrame:Hide()
+            return
+        end
         self.interruptFrame:SetHeight(44)
         if self.interruptFrame.emptyText then
             self.interruptFrame.emptyText:Show()
@@ -624,7 +700,8 @@ function PartyOffCD:RefreshInterruptBar()
     if self.interruptFrame.emptyText then
         self.interruptFrame.emptyText:Hide()
     end
-    self.interruptFrame:SetHeight(28 + (activeCount * (INTERRUPT_ROW_HEIGHT + 2)))
+    local headerHeight = (self.db and self.db.interruptLocked) and 8 or 28
+    self.interruptFrame:SetHeight(headerHeight + (activeCount * (INTERRUPT_ROW_HEIGHT + 2)))
     self.interruptFrame:Show()
 end
 
@@ -682,24 +759,37 @@ function PartyOffCD:CreateMissingBuffFrame()
     local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetColorTexture(0.08, 0.08, 0.10, 0.90)
+    frame.bg = bg
 
     local borderTop = frame:CreateTexture(nil, "BORDER")
     borderTop:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
     borderTop:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
     borderTop:SetHeight(1)
     borderTop:SetColorTexture(0.95, 0.82, 0.2, 0.9)
+    frame.borderTop = borderTop
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     title:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -6)
     title:SetText("Missing Buffs")
     title:SetTextColor(1, 0.85, 0.15)
+    frame.title = title
 
     local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
     closeButton:SetScript("OnClick", function()
-        PartyOffCD.db.missingBuffsHidden = true
-        frame:Hide()
+        PartyOffCD:SetMissingBuffsHidden(true)
     end)
+    frame.closeButton = closeButton
+
+    local lockButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    lockButton:SetSize(18, 18)
+    lockButton:SetPoint("RIGHT", closeButton, "LEFT", -2, 0)
+    lockButton:SetText("L")
+    lockButton:SetScript("OnClick", function()
+        PartyOffCD:SetMissingBuffsLocked(true)
+        PartyOffCD:RefreshConfigPanel()
+    end)
+    frame.lockButton = lockButton
 
     local content = CreateFrame("Frame", nil, frame)
     content:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -22)
@@ -716,6 +806,55 @@ function PartyOffCD:CreateMissingBuffFrame()
     )
 
     self.missingBuffFrame = frame
+    self:UpdateMissingBuffFrameStyle()
+end
+
+function PartyOffCD:SetMissingBuffsHidden(hidden)
+    self.db.missingBuffsHidden = hidden and true or false
+    self:RefreshMissingBuffFrame()
+end
+
+function PartyOffCD:SetMissingBuffsLocked(locked)
+    self.db.missingBuffsLocked = locked and true or false
+    self:UpdateMissingBuffFrameStyle()
+    self:RefreshMissingBuffFrame()
+end
+
+function PartyOffCD:UpdateMissingBuffFrameStyle()
+    if not self.missingBuffFrame then
+        return
+    end
+
+    local locked = self.db and self.db.missingBuffsLocked
+    self.missingBuffFrame:SetMovable(not locked)
+    self.missingBuffFrame:EnableMouse(not locked)
+
+    if self.missingBuffFrame.bg then
+        self.missingBuffFrame.bg:SetShown(not locked)
+    end
+    if self.missingBuffFrame.borderTop then
+        self.missingBuffFrame.borderTop:SetShown(not locked)
+    end
+    if self.missingBuffFrame.title then
+        self.missingBuffFrame.title:SetShown(not locked)
+    end
+    if self.missingBuffFrame.closeButton then
+        self.missingBuffFrame.closeButton:SetShown(not locked)
+    end
+    if self.missingBuffFrame.lockButton then
+        self.missingBuffFrame.lockButton:SetShown(not locked)
+    end
+
+    if self.missingBuffFrame.content then
+        self.missingBuffFrame.content:ClearAllPoints()
+        if locked then
+            self.missingBuffFrame.content:SetPoint("TOPLEFT", self.missingBuffFrame, "TOPLEFT", 4, -4)
+            self.missingBuffFrame.content:SetPoint("BOTTOMRIGHT", self.missingBuffFrame, "BOTTOMRIGHT", -4, 4)
+        else
+            self.missingBuffFrame.content:SetPoint("TOPLEFT", self.missingBuffFrame, "TOPLEFT", 8, -22)
+            self.missingBuffFrame.content:SetPoint("BOTTOMRIGHT", self.missingBuffFrame, "BOTTOMRIGHT", -8, 8)
+        end
+    end
 end
 
 function PartyOffCD:AcquireMissingBuffIcon(parent)
@@ -781,6 +920,8 @@ function PartyOffCD:RefreshMissingBuffFrame()
         return
     end
 
+    self:UpdateMissingBuffFrameStyle()
+
     self:ReleaseMissingBuffIcons()
 
     if not self.db or self.db.missingBuffsHidden then
@@ -810,8 +951,9 @@ function PartyOffCD:RefreshMissingBuffFrame()
     end
 
     local width = 16 + (#missingEntries * MISSING_BUFF_ICON_SIZE) + ((#missingEntries - 1) * MISSING_BUFF_ICON_SPACING)
-    self.missingBuffFrame:SetWidth(math.max(120, width))
-    self.missingBuffFrame:SetHeight(64)
+    local locked = self.db and self.db.missingBuffsLocked
+    self.missingBuffFrame:SetWidth(math.max(locked and 48 or 120, width))
+    self.missingBuffFrame:SetHeight(locked and 52 or 64)
     self.missingBuffFrame:Show()
 end
 

@@ -54,17 +54,37 @@ function PartyOffCD:CreateConfigPanel()
 
     local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -34)
-    subtitle:SetText("Disable by class or by individual spell.")
+    subtitle:SetText("Configure cooldowns, interrupts, and missing buffs.")
+
+    local tabDefs = {
+        { id = "cds", label = "Cooldowns" },
+        { id = "interrupts", label = "Interrupts" },
+        { id = "buffs", label = "Missing Buffs" },
+    }
+    frame.tabs = {}
+    for index, tabDef in ipairs(tabDefs) do
+        local tab = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        tab:SetSize(110, 20)
+        tab:SetPoint("TOPLEFT", frame, "TOPLEFT", 12 + ((index - 1) * 114), -56)
+        tab:SetText(tabDef.label)
+        tab.id = tabDef.id
+        tab:SetScript("OnClick", function(selfTab)
+            frame.activeTab = selfTab.id
+            PartyOffCD:RefreshConfigPanel()
+        end)
+        frame.tabs[#frame.tabs + 1] = tab
+    end
 
     local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
 
     local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    instructions:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -58)
-    instructions:SetText("Use + to add a spell to that class. Edit/Save changes your personal CD and syncs it automatically.")
+    instructions:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -82)
+    instructions:SetText("")
+    frame.instructions = instructions
 
     local scrollFrame = CreateFrame("ScrollFrame", "PartyOffCDConfigScrollFrame", frame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -82)
+    scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -104)
     scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -32, 12)
 
     local content = CreateFrame("Frame", nil, scrollFrame)
@@ -73,6 +93,7 @@ function PartyOffCD:CreateConfigPanel()
 
     frame.scrollFrame = scrollFrame
     frame.content = content
+    frame.activeTab = "cds"
     frame:Hide()
 
     local db = self.db or DB_DEFAULTS
@@ -97,6 +118,95 @@ function PartyOffCD:RefreshConfigPanel()
     wipe(self.configRows)
 
     local y = -4
+    local activeTab = frame.activeTab or "cds"
+
+    for _, tab in ipairs(frame.tabs or {}) do
+        local isActive = tab.id == activeTab
+        tab:SetEnabled(not isActive)
+        tab:SetAlpha(isActive and 1 or 0.7)
+    end
+
+    if activeTab == "interrupts" then
+        if frame.instructions then
+            frame.instructions:SetText("Interrupt window controls.")
+        end
+
+        local header = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        header:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+        header:SetText("Interrupts")
+        self.configRows[#self.configRows + 1] = header
+        y = y - 26
+
+        local showHide = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+        showHide:SetSize(78, 20)
+        showHide:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+        showHide:SetText((self.db.interruptHidden and "Show") or "Hide")
+        showHide:SetScript("OnClick", function()
+            PartyOffCD:SetInterruptHidden(not PartyOffCD.db.interruptHidden)
+            PartyOffCD:RefreshConfigPanel()
+        end)
+        self.configRows[#self.configRows + 1] = showHide
+
+        local lock = CreateCheckbox(nil, content, "Lock")
+        lock:SetPoint("LEFT", showHide, "RIGHT", 14, 0)
+        lock:SetChecked(self.db.interruptLocked == true)
+        lock:SetScript("OnClick", function(selfCheck)
+            PartyOffCD:SetInterruptLocked(selfCheck:GetChecked())
+        end)
+        self.configRows[#self.configRows + 1] = lock
+        y = y - 24
+
+        local hint = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        hint:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+        hint:SetText("Locked: no frame background/title, only interrupt bars.")
+        self.configRows[#self.configRows + 1] = hint
+
+        content:SetHeight(88)
+        return
+    end
+
+    if activeTab == "buffs" then
+        if frame.instructions then
+            frame.instructions:SetText("Missing buffs window controls.")
+        end
+
+        local header = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        header:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+        header:SetText("Missing Buffs")
+        self.configRows[#self.configRows + 1] = header
+        y = y - 26
+
+        local showHide = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+        showHide:SetSize(78, 20)
+        showHide:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+        showHide:SetText((self.db.missingBuffsHidden and "Show") or "Hide")
+        showHide:SetScript("OnClick", function()
+            PartyOffCD:SetMissingBuffsHidden(not PartyOffCD.db.missingBuffsHidden)
+            PartyOffCD:RefreshConfigPanel()
+        end)
+        self.configRows[#self.configRows + 1] = showHide
+
+        local lock = CreateCheckbox(nil, content, "Lock")
+        lock:SetPoint("LEFT", showHide, "RIGHT", 14, 0)
+        lock:SetChecked(self.db.missingBuffsLocked == true)
+        lock:SetScript("OnClick", function(selfCheck)
+            PartyOffCD:SetMissingBuffsLocked(selfCheck:GetChecked())
+        end)
+        self.configRows[#self.configRows + 1] = lock
+        y = y - 24
+
+        local hint = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        hint:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+        hint:SetText("Locked: no frame background/title, only buff icons + MISSING.")
+        self.configRows[#self.configRows + 1] = hint
+
+        content:SetHeight(88)
+        return
+    end
+
+    if frame.instructions then
+        frame.instructions:SetText("Use + to add a spell to that class. Edit/Save changes your personal CD and syncs it automatically.")
+    end
 
     for _, classToken in ipairs(CLASS_ORDER) do
         local spellList = {}
@@ -396,7 +506,7 @@ function PartyOffCD:PrintConfig()
     DebugPrint("Prefix: " .. PREFIX .. " | Channel: " .. channel .. " | InGroup: " .. inGroup)
     DebugPrint("Active spells: " .. tostring(self:GetEnabledSpellCount()) .. "/" .. tostring(self:GetSupportedSpellCount()))
     DebugPrint("Config: " .. configShown .. " | Minimap: " .. minimapShown)
-    DebugPrint("Commands: /pocd use <spellID>, /pocd timer <spellID> <sec>, /pocd test, /pocd config, /pocd buffs")
+    DebugPrint("Commands: /pocd use <spellID>, /pocd timer <spellID> <sec>, /pocd test, /pocd config, /pocd buffs, /pocd interrupts")
     DebugPrint("UI: Use + per class to add spells, and Edit/Save per row to keep your personal CD.")
 end
 
@@ -461,12 +571,21 @@ function PartyOffCD:HandleSlashCommand(input)
     end
 
     if command == "buffs" then
-        self.db.missingBuffsHidden = not self.db.missingBuffsHidden
-        self:RefreshMissingBuffFrame()
+        self:SetMissingBuffsHidden(not self.db.missingBuffsHidden)
         if self.db.missingBuffsHidden then
             DebugPrint("Missing buffs window hidden.")
         else
             DebugPrint("Missing buffs window shown.")
+        end
+        return
+    end
+
+    if command == "interrupts" then
+        self:SetInterruptHidden(not self.db.interruptHidden)
+        if self.db.interruptHidden then
+            DebugPrint("Interrupts window hidden.")
+        else
+            DebugPrint("Interrupts window shown.")
         end
         return
     end

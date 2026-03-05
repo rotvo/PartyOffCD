@@ -152,14 +152,13 @@ local SPELLS = {
 
     -- PRIEST
     [10060] = { cd = 120, type = "OFF", class = "PRIEST" }, -- Power Infusion
-    [15487] = { cd = 45, type = "INT", class = "PRIEST", specs = { "SHADOW" } }, -- Silence
     [228260] = { cd = 90, type = "OFF", class = "PRIEST", specs = { "SHADOW" } }, -- Void Eruption
     [200183] = { cd = 120, type = "OFF", class = "PRIEST", specs = { "HOLY" } }, -- Apotheosis
     [47585] = { cd = 120, type = "DEF", class = "PRIEST", specs = { "SHADOW" } }, -- Dispersion
     [33206] = { cd = 180, type = "DEF", class = "PRIEST", specs = { "DISC" } }, -- Pain Suppression
     [47788] = { cd = 180, type = "DEF", class = "PRIEST", specs = { "HOLY" } }, -- Guardian Spirit
     [19236] = { cd = 90, type = "DEF", class = "PRIEST" }, -- Desperate Prayer
-    [11487] = { cd = 30, type = "INT", class = "PRIEST" }, -- Interrupt
+    [11487] = { cd = 30, type = "INT", class = "PRIEST", specs = { "SHADOW" } }, -- Interrupt
     [15286] = { cd = 120, type = "DEF", class = "PRIEST" }, --[Vampiric Embrace]
 
     -- ROGUE

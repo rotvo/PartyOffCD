@@ -11,6 +11,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Shared core defaults moved to `Core.lua` for cleaner modular growth.
 - New movable and closable `Missing Buffs` panel that shows missing group buffs with icon + `MISSING`.
 - `/pocd buffs` slash command to show/hide the missing buffs panel.
+- `/pocd interrupts` slash command to show/hide the interrupts panel.
+- Config tabs added: `Cooldowns`, `Interrupts`, and `Missing Buffs`.
+- Interrupts and Missing Buffs tabs include Show/Hide and Lock toggles.
+- Interrupts and Missing Buffs frames now include an in-frame lock button for quick locking.
 
 ### Changed
 - Addon code split into modules: `Spells.lua`, `Comms.lua`, `Tracker.lua`, and `ConfigUI.lua`.
