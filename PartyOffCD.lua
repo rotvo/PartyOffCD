@@ -160,6 +160,8 @@ local SPELLS = {
     [12472] = { cd = 180, type = "OFF", class = "MAGE", specs = { "FROST" } }, -- Icy Veins
     [55342] = { cd = 120, type = "OFF", class = "MAGE" }, -- Mirror Image
     [45438] = { cd = 240, type = "DEF", class = "MAGE" }, -- Ice Block
+    [2139] = { cd = 20, type = "INT", class = "MAGE" }, -- Counterspell
+    
 
     -- PRIEST
     [10060] = { cd = 120, type = "OFF", class = "PRIEST" }, -- Power Infusion
@@ -321,6 +323,7 @@ PartyOffCD.lastOverrideBroadcast = 0
 PartyOffCD.lastRealtimeSync = 0
 PartyOffCD.lastLocalReport = {}
 PartyOffCD.senderSpecIDs = {}
+PartyOffCD.addonUsers = {}
 
 local function DebugPrint(message)
     print("|cff33ff99PartyOffCD|r: " .. tostring(message))
@@ -753,6 +756,51 @@ function PartyOffCD:GetSenderSpecID(senderKey)
     end
 
     return nil
+end
+
+function PartyOffCD:MarkAddonUser(senderKey)
+    senderKey = self:ResolveSenderKey(senderKey)
+    if not senderKey then
+        return false
+    end
+
+    local stamp = GetTime()
+    self.addonUsers[senderKey] = stamp
+
+    local rosterEntry = self.rosterLookup[senderKey]
+    if rosterEntry then
+        if rosterEntry.key then
+            self.addonUsers[rosterEntry.key] = stamp
+        end
+        if rosterEntry.shortKey then
+            self.addonUsers[rosterEntry.shortKey] = stamp
+        end
+    end
+
+    return true
+end
+
+function PartyOffCD:HasAddon(senderKey)
+    senderKey = self:ResolveSenderKey(senderKey)
+    if not senderKey then
+        return false
+    end
+
+    if senderKey == self.playerKeys.full or senderKey == self.playerKeys.short then
+        return true
+    end
+
+    local rosterEntry = self.rosterLookup[senderKey]
+    if rosterEntry then
+        if rosterEntry.key and self.addonUsers[rosterEntry.key] then
+            return true
+        end
+        if rosterEntry.shortKey and self.addonUsers[rosterEntry.shortKey] then
+            return true
+        end
+    end
+
+    return self.addonUsers[senderKey] ~= nil
 end
 
 function PartyOffCD:UpdateSenderSpecID(senderKey, specID)
@@ -1231,6 +1279,7 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
     if not senderKey then
         return
     end
+    self:MarkAddonUser(senderKey)
 
     if action == "H" then
         local senderSpecID = valueA
@@ -1400,6 +1449,13 @@ function PartyOffCD:BuildRoster()
     self.playerKeys.short = playerShortKey
     self.playerKeys.class = playerClass
     self.playerKeys.specID = playerSpecID
+    local stamp = GetTime()
+    if self.playerKeys.full then
+        self.addonUsers[self.playerKeys.full] = stamp
+    end
+    if self.playerKeys.short then
+        self.addonUsers[self.playerKeys.short] = stamp
+    end
     if playerSpecID then
         if self.playerKeys.full then
             self.senderSpecIDs[self.playerKeys.full] = playerSpecID
@@ -1528,6 +1584,7 @@ function PartyOffCD:CreateRow(index)
     row.label:SetPoint("RIGHT", row, "LEFT", -6, 0)
     row.label:SetJustifyH("RIGHT")
     row.label:SetWidth(90)
+    row.label:Hide()
 
     self.rows[index] = row
     return row
@@ -1629,7 +1686,7 @@ function PartyOffCD:AnchorRow(row, index)
 end
 
 function PartyOffCD:RenderRow(row, rosterEntry)
-    row.label:SetText(rosterEntry.name or "?")
+    row.label:SetText("")
     self:ReleaseRowIcons(row)
 
     local entries = self:GetSortedCooldowns(rosterEntry.key)
@@ -1776,13 +1833,17 @@ end
 
 function PartyOffCD:GetActiveInterruptEntry(senderKey)
     local entries = self:GetSortedCooldowns(senderKey, "INT")
+    local fallback = nil
     for _, entry in ipairs(entries) do
+        if not fallback then
+            fallback = entry
+        end
         if entry.isActive then
             return entry
         end
     end
 
-    return nil
+    return fallback
 end
 
 function PartyOffCD:RenderInterruptRow(row, rosterEntry, entry)
@@ -1815,11 +1876,13 @@ function PartyOffCD:RefreshInterruptBar()
 
     local activeCount = 0
     for _, rosterEntry in ipairs(self.roster) do
-        local entry = self:GetActiveInterruptEntry(rosterEntry.key)
-        if entry then
-            activeCount = activeCount + 1
-            local row = self:GetInterruptRow(activeCount)
-            self:RenderInterruptRow(row, rosterEntry, entry)
+        if self:HasAddon(rosterEntry.key) then
+            local entry = self:GetActiveInterruptEntry(rosterEntry.key)
+            if entry then
+                activeCount = activeCount + 1
+                local row = self:GetInterruptRow(activeCount)
+                self:RenderInterruptRow(row, rosterEntry, entry)
+            end
         end
     end
 
@@ -1885,7 +1948,12 @@ function PartyOffCD:RefreshTracker()
 
     for index, entry in ipairs(self.roster) do
         local row = self:GetRow(index)
-        self:RenderRow(row, entry)
+        if self:HasAddon(entry.key) then
+            self:RenderRow(row, entry)
+        else
+            self:ReleaseRowIcons(row)
+            row:Hide()
+        end
     end
 
     for index = (#self.roster + 1), #self.rows do
