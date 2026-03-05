@@ -270,26 +270,7 @@ for spellID, meta in pairs(SPELLS) do
     }
 end
 
-local PANEL_SPELLS = {
-    31884,
-    375087,
-    190319,
-    12042,
-    12472,
-    19574,
-    97462,
-    871,
-    22812,
-    48792,
-    642,
-    102342,
-}
-
 local DB_DEFAULTS = {
-    panelPoint = "CENTER",
-    panelRelativePoint = "CENTER",
-    panelX = 320,
-    panelY = 0,
     configPoint = "CENTER",
     configRelativePoint = "CENTER",
     configX = 0,
@@ -849,7 +830,6 @@ function PartyOffCD:SetClassEnabled(classToken, isEnabled)
     end
 
     self:PruneDisabledCooldowns()
-    self:RefreshPanelButtons()
     self:RefreshConfigPanel()
     self:RefreshTracker()
 end
@@ -861,7 +841,6 @@ function PartyOffCD:SetSpellEnabled(spellID, isEnabled)
 
     self.db.spellEnabled[spellID] = isEnabled and true or false
     self:PruneDisabledCooldowns()
-    self:RefreshPanelButtons()
     self:RefreshConfigPanel()
     self:RefreshTracker()
 end
@@ -902,7 +881,7 @@ end
 function PartyOffCD:NotifyOverrideReceived(sender, spellID, meta)
     local spellName = SafeGetSpellInfo(spellID) or ("Spell " .. tostring(spellID))
     local senderName = Ambiguate and Ambiguate(sender or "?", "short") or (sender or "?")
-    local message = string.format("%s actualizo %s a %ss", senderName, spellName, tostring(meta.cd))
+    local message = string.format("%s updated %s to %ss", senderName, spellName, tostring(meta.cd))
     DebugPrint(message)
 
     if UIErrorsFrame and UIErrorsFrame.AddMessage then
@@ -948,35 +927,35 @@ function PartyOffCD:AddCustomSpell(classToken, spellID, cooldown, spellType)
     spellType = spellType and string.upper(spellType) or nil
 
     if not classToken or not CLASS_LABELS[classToken] then
-        DebugPrint("Clase invalida para custom spell.")
+        DebugPrint("Invalid class for custom spell.")
         return false
     end
 
     if not spellID or spellID <= 0 then
-        DebugPrint("SpellID invalido.")
+        DebugPrint("Invalid SpellID.")
         return false
     end
 
     if not cooldown or cooldown <= 0 then
-        DebugPrint("CD invalido. Debe ser un numero en segundos.")
+        DebugPrint("Invalid CD. It must be a number in seconds.")
         return false
     end
 
     if not SPELL_TYPE_PRIORITY[spellType] then
-        DebugPrint("Tipo invalido. Usa OFF, DEF o INT.")
+        DebugPrint("Invalid type. Use OFF, DEF or INT.")
         return false
     end
 
     local spellName = SafeGetSpellInfo(spellID)
     if not spellName then
-        DebugPrint("Ese spellID no existe o no esta disponible en el cliente.")
+        DebugPrint("That SpellID does not exist or is not available on this client.")
         return false
     end
 
     local existing = SPELLS[spellID]
     local playerKey = self:GetPlayerCanonical()
     if not playerKey then
-        DebugPrint("No se pudo identificar tu personaje para guardar el override.")
+        DebugPrint("Could not identify your character to save the override.")
         return false
     end
 
@@ -1007,16 +986,15 @@ function PartyOffCD:AddCustomSpell(classToken, spellID, cooldown, spellType)
     end
 
     local synced = self:SendSyncMessage(spellID, override)
-    self:RefreshPanelButtons()
     self:RefreshConfigPanel()
     self:RefreshTracker()
     if existing then
-        DebugPrint(string.format("Spell actualizado: %s (%d, %s, %ss)", spellName, spellID, spellType, cooldown))
+        DebugPrint(string.format("Spell updated: %s (%d, %s, %ss)", spellName, spellID, spellType, cooldown))
     else
-        DebugPrint(string.format("Custom spell agregado: %s (%d, %s, %ss)", spellName, spellID, spellType, cooldown))
+        DebugPrint(string.format("Custom spell added: %s (%d, %s, %ss)", spellName, spellID, spellType, cooldown))
     end
     if synced then
-        DebugPrint("Override sincronizado con el grupo.")
+        DebugPrint("Override synced with the group.")
     end
     return true
 end
@@ -1237,14 +1215,14 @@ function PartyOffCD:ReportSpellUse(spellID, silent)
     local meta = self:GetSpellMeta(spellID)
     if not meta then
         if not silent then
-            DebugPrint("SpellID no soportado: " .. tostring(spellID))
+            DebugPrint("Unsupported SpellID: " .. tostring(spellID))
         end
         return
     end
 
     if not self:IsSpellEnabled(spellID) then
         if not silent then
-            DebugPrint("Ese spell esta desactivado en la configuracion.")
+            DebugPrint("That spell is disabled in configuration.")
         end
         return
     end
@@ -1252,7 +1230,7 @@ function PartyOffCD:ReportSpellUse(spellID, silent)
     if not silent then
         local canReport, remaining = self:CanReportLocalUse(spellID)
         if not canReport then
-            DebugPrint(string.format("Ese spell aun esta en cooldown real (%.1fs).", remaining))
+            DebugPrint(string.format("That spell is still on real cooldown (%.1fs).", remaining))
             return
         end
     end
@@ -1264,7 +1242,7 @@ function PartyOffCD:ReportSpellUse(spellID, silent)
 
     local sent = self:SendUseMessage(spellID)
     if not sent and not silent then
-        DebugPrint("No estas en grupo; se inicio solo el timer local para " .. tostring(spellID))
+        DebugPrint("You are not in a group; only the local timer was started for " .. tostring(spellID))
     end
 
     self:RefreshTracker()
@@ -1397,6 +1375,8 @@ function PartyOffCD:BuildRoster()
         for index = 1, MAX_TRACKED_ROWS - 1 do
             units[#units + 1] = "party" .. index
         end
+    else
+        units[#units + 1] = "player"
     end
 
     for _, unit in ipairs(units) do
@@ -1918,24 +1898,6 @@ end
 function PartyOffCD:RefreshTracker()
     self:PruneState()
 
-    if not IsInGroup() and not IsInRaid() then
-        if self.trackerFrame then
-            self.trackerFrame:Hide()
-        end
-        if self.interruptFrame then
-            self.interruptFrame:Hide()
-        end
-
-        for _, row in ipairs(self.rows) do
-            self:ReleaseRowIcons(row)
-            row:Hide()
-        end
-        for _, row in ipairs(self.interruptRows) do
-            row:Hide()
-        end
-        return
-    end
-
     self:BuildRoster()
 
     if #self.roster == 0 then
@@ -1972,123 +1934,6 @@ function PartyOffCD:RefreshTracker()
     end
 
     self:RefreshInterruptBar()
-end
-
-function PartyOffCD:RefreshPanelButtons()
-    if not self.panel or not self.panel.buttons then
-        return
-    end
-
-    for _, button in ipairs(self.panel.buttons) do
-        local enabled = self:IsSpellEnabled(button.spellID)
-        if button.texture.SetDesaturated then
-            button.texture:SetDesaturated(not enabled)
-        end
-        button:SetAlpha(enabled and 1 or 0.35)
-    end
-end
-
-function PartyOffCD:CreatePanel()
-    if self.panel then
-        return
-    end
-
-    local panel = CreateFrame("Frame", "PartyOffCDPanel", UIParent)
-    panel:SetSize(242, 116)
-    panel:SetMovable(true)
-    panel:EnableMouse(true)
-    panel:RegisterForDrag("LeftButton")
-    panel:SetClampedToScreen(true)
-    panel:SetScript("OnDragStart", panel.StartMoving)
-    panel:SetScript("OnDragStop", function(frame)
-        frame:StopMovingOrSizing()
-        local point, _, relativePoint, x, y = frame:GetPoint(1)
-        PartyOffCD.db.panelPoint = point
-        PartyOffCD.db.panelRelativePoint = relativePoint
-        PartyOffCD.db.panelX = x
-        PartyOffCD.db.panelY = y
-    end)
-
-    local bg = panel:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(0.03, 0.03, 0.03, 0.8)
-
-    local borderTop = panel:CreateTexture(nil, "BORDER")
-    borderTop:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-    borderTop:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
-    borderTop:SetHeight(1)
-    borderTop:SetColorTexture(0.2, 0.7, 0.95, 0.7)
-
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -8)
-    title:SetText("PartyOffCD Panel")
-
-    local hint = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -10, -10)
-    hint:SetText("Drag")
-
-    panel.buttons = {}
-
-    local columns = 6
-    for index, spellID in ipairs(PANEL_SPELLS) do
-        local button = CreateFrame("Button", nil, panel)
-        button:SetSize(32, 32)
-
-        local row = math.floor((index - 1) / columns)
-        local column = (index - 1) % columns
-        button:SetPoint("TOPLEFT", panel, "TOPLEFT", 10 + (column * 37), -30 - (row * 37))
-
-        button.texture = button:CreateTexture(nil, "ARTWORK")
-        button.texture:SetAllPoints()
-        button.texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-        local _, texture = SafeGetSpellInfo(spellID)
-        button.texture:SetTexture(texture or 134400)
-
-        button.spellID = spellID
-        button:RegisterForClicks("LeftButtonUp")
-        button:SetScript("OnClick", function(selfButton)
-            PartyOffCD:ReportSpellUse(selfButton.spellID)
-        end)
-
-        button:SetScript("OnEnter", function(selfButton)
-            GameTooltip:SetOwner(selfButton, "ANCHOR_RIGHT")
-            local meta = PartyOffCD:GetDisplayMeta(selfButton.spellID) or SPELLS[selfButton.spellID]
-            if meta then
-                GameTooltip:SetSpellByID(selfButton.spellID)
-                GameTooltip:AddLine("Click: reportar uso", 0.8, 0.8, 0.8)
-                GameTooltip:AddLine("Clase: " .. PartyOffCD:GetClassLabel(meta.class), 0.8, 0.8, 0.8)
-                GameTooltip:AddLine("Base CD: " .. meta.cd .. "s", 0.8, 0.8, 0.8)
-                if not PartyOffCD:IsSpellEnabled(selfButton.spellID) then
-                    GameTooltip:AddLine("Desactivado en configuracion", 1, 0.2, 0.2)
-                end
-                GameTooltip:Show()
-            end
-        end)
-
-        button:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-
-        panel.buttons[#panel.buttons + 1] = button
-    end
-
-    panel:Hide()
-
-    local db = self.db or DB_DEFAULTS
-    panel:SetPoint(db.panelPoint or DB_DEFAULTS.panelPoint, UIParent, db.panelRelativePoint or DB_DEFAULTS.panelRelativePoint, db.panelX or DB_DEFAULTS.panelX, db.panelY or DB_DEFAULTS.panelY)
-
-    self.panel = panel
-    self:RefreshPanelButtons()
-end
-
-function PartyOffCD:TogglePanel()
-    self:CreatePanel()
-    if self.panel:IsShown() then
-        self.panel:Hide()
-    else
-        self.panel:Show()
-    end
 end
 
 function PartyOffCD:CreateConfigPanel()
@@ -2133,20 +1978,12 @@ function PartyOffCD:CreateConfigPanel()
     local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
 
-    local quickPanelButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    quickPanelButton:SetSize(130, 22)
-    quickPanelButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -58)
-    quickPanelButton:SetText("Toggle Report Panel")
-    quickPanelButton:SetScript("OnClick", function()
-        PartyOffCD:TogglePanel()
-    end)
-
     local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    instructions:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -86)
+    instructions:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -58)
     instructions:SetText("Use + to add a spell to that class. Edit/Save changes your personal CD and syncs it automatically.")
 
     local scrollFrame = CreateFrame("ScrollFrame", "PartyOffCDConfigScrollFrame", frame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -110)
+    scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -82)
     scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -32, 12)
 
     local content = CreateFrame("Frame", nil, scrollFrame)
@@ -2331,7 +2168,7 @@ function PartyOffCD:RefreshConfigPanel()
                 saveButton:SetScript("OnClick", function()
                     local newCooldown = tonumber(editBox:GetText())
                     if not newCooldown or newCooldown <= 0 then
-                        DebugPrint("Ingresa un CD valido en segundos.")
+                        DebugPrint("Enter a valid CD in seconds.")
                         return
                     end
 
@@ -2416,12 +2253,8 @@ function PartyOffCD:CreateMinimapButton()
 
     button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
-    button:SetScript("OnClick", function(_, mouseButton)
-        if mouseButton == "RightButton" then
-            PartyOffCD:TogglePanel()
-        else
-            PartyOffCD:ToggleConfigPanel()
-        end
+    button:SetScript("OnClick", function()
+        PartyOffCD:ToggleConfigPanel()
     end)
 
     button:SetScript("OnDragStart", function()
@@ -2450,9 +2283,8 @@ function PartyOffCD:CreateMinimapButton()
     button:SetScript("OnEnter", function(selfButton)
         GameTooltip:SetOwner(selfButton, "ANCHOR_LEFT")
         GameTooltip:AddLine("PartyOffCD")
-        GameTooltip:AddLine("Left Click: configuracion", 0.8, 0.8, 0.8)
-        GameTooltip:AddLine("Right Click: report panel", 0.8, 0.8, 0.8)
-        GameTooltip:AddLine("Drag: mover icono", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("Click: configuration", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("Drag: move icon", 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
 
@@ -2471,21 +2303,20 @@ function PartyOffCD:RunTest()
             self:ReportSpellUse(spellID, true)
         end
     end
-    DebugPrint("Test disparado con timers locales de ejemplo.")
+    DebugPrint("Test triggered with sample local timers.")
 end
 
 function PartyOffCD:PrintConfig()
     local channel = self:GetTargetChannel() or "NONE"
     local inGroup = (IsInGroup() or IsInRaid()) and "yes" or "no"
-    local panelShown = (self.panel and self.panel:IsShown()) and "shown" or "hidden"
     local configShown = (self.configPanel and self.configPanel:IsShown()) and "shown" or "hidden"
     local minimapShown = "shown"
 
     DebugPrint("Prefix: " .. PREFIX .. " | Channel: " .. channel .. " | InGroup: " .. inGroup)
-    DebugPrint("Spells activos: " .. tostring(self:GetEnabledSpellCount()) .. "/" .. tostring(self:GetSupportedSpellCount()))
-    DebugPrint("Panel: " .. panelShown .. " | Config: " .. configShown .. " | Minimap: " .. minimapShown)
-    DebugPrint("Comandos: /pocd use <spellID>, /pocd timer <spellID> <seg>, /pocd test, /pocd panel, /pocd config")
-    DebugPrint("UI: Usa + por clase para agregar spells, y Edit/Save por fila para guardar tu CD personal.")
+    DebugPrint("Active spells: " .. tostring(self:GetEnabledSpellCount()) .. "/" .. tostring(self:GetSupportedSpellCount()))
+    DebugPrint("Config: " .. configShown .. " | Minimap: " .. minimapShown)
+    DebugPrint("Commands: /pocd use <spellID>, /pocd timer <spellID> <sec>, /pocd test, /pocd config")
+    DebugPrint("UI: Use + per class to add spells, and Edit/Save per row to keep your personal CD.")
 end
 
 function PartyOffCD:GetSupportedSpellCount()
@@ -2514,7 +2345,7 @@ function PartyOffCD:HandleSlashCommand(input)
     if command == "use" then
         local spellID = tonumber(rest)
         if not spellID then
-            DebugPrint("Uso: /pocd use <spellID>")
+            DebugPrint("Usage: /pocd use <spellID>")
             return
         end
 
@@ -2532,24 +2363,19 @@ function PartyOffCD:HandleSlashCommand(input)
         local spellID = tonumber(spellIDText)
         local remaining = tonumber(remainingText)
         if not spellID or remaining == nil then
-            DebugPrint("Uso: /pocd timer <spellID> <segundosRestantes>")
+            DebugPrint("Usage: /pocd timer <spellID> <remainingSeconds>")
             return
         end
 
         local playerKey = self:GetPlayerCanonical()
         if not playerKey then
-            DebugPrint("No se pudo identificar tu personaje.")
+            DebugPrint("Could not identify your character.")
             return
         end
 
         if not self:SetRemainingCooldown(playerKey, spellID, remaining) then
-            DebugPrint("No se pudo ajustar ese timer.")
+            DebugPrint("Could not adjust that timer.")
         end
-        return
-    end
-
-    if command == "panel" then
-        self:TogglePanel()
         return
     end
 
@@ -2559,7 +2385,7 @@ function PartyOffCD:HandleSlashCommand(input)
         return
     end
 
-    DebugPrint("Comando desconocido: " .. tostring(command))
+    DebugPrint("Unknown command: " .. tostring(command))
     self:PrintConfig()
 end
 
@@ -2630,12 +2456,11 @@ function PartyOffCD:Initialize()
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
         C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
     else
-        DebugPrint("C_ChatInfo no disponible; el tracking de red no funcionara.")
+        DebugPrint("C_ChatInfo unavailable; network tracking will not work.")
     end
 
     self:CreateTrackerFrame()
     self:CreateInterruptFrame()
-    self:CreatePanel()
     self:CreateConfigPanel()
     self:CreateMinimapButton()
 
@@ -2656,13 +2481,12 @@ function PartyOffCD:Initialize()
     self:RegisterEvent("CHAT_MSG_ADDON")
     self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 
-    self:RefreshPanelButtons()
     self:RefreshConfigPanel()
     self:RefreshMinimapButton()
     self:RequestGroupOverrides()
     self:BroadcastLocalOverrides(true)
     self:RefreshTracker()
-    DebugPrint("Cargado. Usa /pocd config o click izquierdo en el minimapa.")
+    DebugPrint("Loaded. Use /pocd config or click the minimap button.")
 end
 
 PartyOffCD:SetScript("OnEvent", function(_, event, ...)
@@ -2704,7 +2528,6 @@ PartyOffCD notes:
    [31884] = { cd = 120, type = "OFF", class = "PALADIN" }
    Optional spec filter:
    specs = { "FROST" } or specs = { "ARMS", "FURY" }
-   If you want the spell on the clickable panel, also add its spellID to PANEL_SPELLS.
    New spells appear automatically in the config panel under their class.
    The config panel can also overwrite existing base spells with your own CD/type/class values.
    Overrides are stored per character and are broadcast to party members automatically.
@@ -2721,12 +2544,10 @@ PartyOffCD notes:
    /pocd use 97462
    /pocd use 190319
    /pocd test
-   /pocd panel
    /pocd config
 
 4) Minimap and config
-   Left click the minimap button opens the config panel.
-   Right click the minimap button opens the quick report panel.
+   Click the minimap button opens the config panel.
    Drag the minimap button to move it around the minimap.
    The minimap icon is always enabled.
    Each class row has a + button to add a new spell to that class.
