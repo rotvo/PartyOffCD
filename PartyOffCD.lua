@@ -12,6 +12,10 @@ local UPDATE_INTERVAL = 0.2
 local REAL_SYNC_INTERVAL = 2.0
 local REAL_SYNC_THRESHOLD = 0.5
 local MAX_TRACKED_ROWS = 5
+local MAX_TRACKER_COLUMNS = 8
+local MAX_VERTICAL_TRACKER_COLUMNS = 4
+local MIN_TRACKER_ICON_SCALE = 10
+local MAX_TRACKER_ICON_SCALE = 100
 local ICON_SIZE = 30
 local ICON_SPACING = 3
 local INTERRUPT_BAR_WIDTH = 190
@@ -79,17 +83,31 @@ local function SafeGetSpellInfo(spellID)
     return name, icon
 end
 
+local function TrySafeNumber(value)
+    if value == nil then
+        return nil
+    end
+
+    local ok, parsed = pcall(function()
+        return tonumber(tostring(value))
+    end)
+    if ok and type(parsed) == "number" then
+        return parsed
+    end
+
+    return nil
+end
+
 local function SafeGetSpellCooldown(spellID)
     if C_Spell and C_Spell.GetSpellCooldown then
         local info = C_Spell.GetSpellCooldown(spellID)
         if info then
-            -- Avoid comparing secure booleans from C_Spell cooldown info in combat.
-            return info.startTime or 0, info.duration or 0, true
+            return info.startTime, info.duration, true
         end
     end
 
     local startTime, duration, enabled = GetSpellCooldown(spellID)
-    return startTime or 0, duration or 0, enabled ~= 0
+    return startTime, duration, enabled ~= 0
 end
 
 local function GetUnitSpecID(unit)
@@ -204,6 +222,10 @@ PartyOffCDCore.PREFIX = PREFIX
 PartyOffCDCore.MESSAGE_VERSION = MESSAGE_VERSION
 PartyOffCDCore.UPDATE_INTERVAL = UPDATE_INTERVAL
 PartyOffCDCore.MAX_TRACKED_ROWS = MAX_TRACKED_ROWS
+PartyOffCDCore.MAX_TRACKER_COLUMNS = MAX_TRACKER_COLUMNS
+PartyOffCDCore.MAX_VERTICAL_TRACKER_COLUMNS = MAX_VERTICAL_TRACKER_COLUMNS
+PartyOffCDCore.MIN_TRACKER_ICON_SCALE = MIN_TRACKER_ICON_SCALE
+PartyOffCDCore.MAX_TRACKER_ICON_SCALE = MAX_TRACKER_ICON_SCALE
 PartyOffCDCore.ICON_SIZE = ICON_SIZE
 PartyOffCDCore.ICON_SPACING = ICON_SPACING
 PartyOffCDCore.INTERRUPT_BAR_WIDTH = INTERRUPT_BAR_WIDTH
@@ -340,20 +362,44 @@ end
 
 function PartyOffCD:GetLocalCooldownRemaining(spellID)
     local startTime, duration, enabled = SafeGetSpellCooldown(spellID)
-    if not enabled or not startTime or not duration then
-        return 0, duration or 0
+    startTime = TrySafeNumber(startTime)
+    duration = TrySafeNumber(duration)
+    if not enabled then
+        return 0, duration or 0, true
     end
 
-    if duration <= 1.5 or startTime <= 0 then
-        return 0, duration
+    if not startTime or not duration then
+        return nil, nil, false
     end
 
-    local remaining = (startTime + duration) - GetTime()
+    local isShortCooldown = false
+    local okShort = pcall(function()
+        isShortCooldown = (duration <= 1.5 or startTime <= 0)
+    end)
+    if (not okShort) or isShortCooldown then
+        if not okShort then
+            return nil, nil, false
+        end
+        return 0, duration, true
+    end
+
+    local remaining = 0
+    local okRemaining = pcall(function()
+        remaining = (startTime + duration) - GetTime()
+    end)
+    if not okRemaining then
+        return nil, nil, false
+    end
+
+    remaining = TrySafeNumber(remaining)
+    if not remaining then
+        return nil, nil, false
+    end
     if remaining < 0 then
         remaining = 0
     end
 
-    return remaining, duration
+    return remaining, duration, true
 end
 
 function PartyOffCD:StartCooldown(senderKey, spellID, senderTime)
@@ -421,8 +467,8 @@ function PartyOffCD:SetRemainingCooldown(senderKey, spellID, remaining, skipSend
 end
 
 function PartyOffCD:CanReportLocalUse(spellID)
-    local remaining = self:GetLocalCooldownRemaining(spellID)
-    if remaining and remaining > 0.2 then
+    local remaining, _, reliable = self:GetLocalCooldownRemaining(spellID)
+    if reliable and remaining and remaining > 0.2 then
         return false, remaining
     end
 
@@ -461,18 +507,16 @@ function PartyOffCD:SyncLocalRealCooldowns()
     for spellID, cooldownData in pairs(self.cooldowns[playerKey]) do
         if self:IsSpellEnabled(spellID) then
             local trackedRemaining = (type(cooldownData) == "table" and cooldownData.endTime or 0) - now
-            local realRemaining = self:GetLocalCooldownRemaining(spellID)
+            local realRemaining, _, reliable = self:GetLocalCooldownRemaining(spellID)
 
             if trackedRemaining < 0 then
                 trackedRemaining = 0
             end
 
-            if realRemaining <= 0 then
-                if trackedRemaining > REAL_SYNC_THRESHOLD then
-                    self:SetRemainingCooldown(playerKey, spellID, 0)
+            if reliable and realRemaining and realRemaining > 0 then
+                if math.abs(realRemaining - trackedRemaining) >= REAL_SYNC_THRESHOLD then
+                    self:SetRemainingCooldown(playerKey, spellID, math.ceil(realRemaining))
                 end
-            elseif math.abs(realRemaining - trackedRemaining) >= REAL_SYNC_THRESHOLD then
-                self:SetRemainingCooldown(playerKey, spellID, math.ceil(realRemaining))
             end
         end
     end

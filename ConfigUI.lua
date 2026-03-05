@@ -10,12 +10,30 @@ local SPELLS = PartyOffCDCore.SPELLS
 local DB_DEFAULTS = PartyOffCDCore.DEFAULTS
 local PREFIX = PartyOffCDCore.PREFIX
 local MINIMAP_RADIUS = PartyOffCDCore.MINIMAP_RADIUS
+local MAX_TRACKER_COLUMNS = PartyOffCDCore.MAX_TRACKER_COLUMNS or 8
+local MIN_TRACKER_ICON_SCALE = PartyOffCDCore.MIN_TRACKER_ICON_SCALE or 10
+local MAX_TRACKER_ICON_SCALE = PartyOffCDCore.MAX_TRACKER_ICON_SCALE or 100
+local TRACKER_ATTACH_CYCLE = { "LEFT", "RIGHT", "TOP", "BOTTOM" }
+local TRACKER_ATTACH_LABELS = {
+    LEFT = "Left",
+    RIGHT = "Right",
+    TOP = "Top",
+    BOTTOM = "Bottom",
+}
 
 local DebugPrint = PartyOffCDCore.DebugPrint
 local SafeGetSpellInfo = PartyOffCDCore.SafeGetSpellInfo
-local GetNextSpellType = PartyOffCDCore.GetNextSpellType
 local CreateCheckbox = PartyOffCDCore.CreateCheckbox
 local CreateNumericEditBox = PartyOffCDCore.CreateNumericEditBox
+
+local function GetNextTrackerAttach(currentAttach)
+    for index, attach in ipairs(TRACKER_ATTACH_CYCLE) do
+        if attach == currentAttach then
+            return TRACKER_ATTACH_CYCLE[(index % #TRACKER_ATTACH_CYCLE) + 1]
+        end
+    end
+    return TRACKER_ATTACH_CYCLE[1]
+end
 
 function PartyOffCD:CreateConfigPanel()
     if self.configPanel then
@@ -208,6 +226,102 @@ function PartyOffCD:RefreshConfigPanel()
         frame.instructions:SetText("Use + to add a spell to that class. Edit/Save changes your personal CD and syncs it automatically.")
     end
 
+    local layoutHeader = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    layoutHeader:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    layoutHeader:SetText("Tracker Layout")
+    self.configRows[#self.configRows + 1] = layoutHeader
+    y = y - 24
+
+    local attachButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    attachButton:SetSize(138, 20)
+    attachButton:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    attachButton:SetText("Attach: " .. (TRACKER_ATTACH_LABELS[self:GetTrackerAttach()] or "Left"))
+    attachButton:SetScript("OnClick", function()
+        local nextAttach = GetNextTrackerAttach(PartyOffCD:GetTrackerAttach())
+        PartyOffCD:SetTrackerAttach(nextAttach)
+        PartyOffCD:RefreshConfigPanel()
+        PartyOffCD:RefreshTracker()
+    end)
+    self.configRows[#self.configRows + 1] = attachButton
+
+    local columnsLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    columnsLabel:SetPoint("LEFT", attachButton, "RIGHT", 12, 0)
+    columnsLabel:SetText("Columns")
+    self.configRows[#self.configRows + 1] = columnsLabel
+
+    local columnsMinus = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    columnsMinus:SetSize(20, 20)
+    columnsMinus:SetPoint("LEFT", columnsLabel, "RIGHT", 6, 0)
+    columnsMinus:SetText("-")
+    columnsMinus:SetScript("OnClick", function()
+        PartyOffCD:SetTrackerColumns(PartyOffCD:GetTrackerColumns() - 1)
+        PartyOffCD:RefreshConfigPanel()
+        PartyOffCD:RefreshTracker()
+    end)
+    self.configRows[#self.configRows + 1] = columnsMinus
+
+    local columnsValue = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    columnsValue:SetPoint("LEFT", columnsMinus, "RIGHT", 7, 0)
+    columnsValue:SetText(tostring(self:GetTrackerColumns()))
+    self.configRows[#self.configRows + 1] = columnsValue
+
+    local columnsPlus = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    columnsPlus:SetSize(20, 20)
+    columnsPlus:SetPoint("LEFT", columnsValue, "RIGHT", 7, 0)
+    columnsPlus:SetText("+")
+    columnsPlus:SetScript("OnClick", function()
+        PartyOffCD:SetTrackerColumns(PartyOffCD:GetTrackerColumns() + 1)
+        PartyOffCD:RefreshConfigPanel()
+        PartyOffCD:RefreshTracker()
+    end)
+    self.configRows[#self.configRows + 1] = columnsPlus
+
+    local currentColumns = self:GetTrackerColumns()
+    local currentAttach = self:GetTrackerAttach()
+    local currentLimit = (self.GetTrackerColumnLimit and self:GetTrackerColumnLimit(currentAttach)) or MAX_TRACKER_COLUMNS
+    columnsMinus:SetEnabled(currentColumns > 1)
+    columnsPlus:SetEnabled(currentColumns < currentLimit)
+    y = y - 28
+
+    local sizeLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    sizeLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    sizeLabel:SetText("Icon Size %")
+    self.configRows[#self.configRows + 1] = sizeLabel
+
+    local sizeMinus = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    sizeMinus:SetSize(20, 20)
+    sizeMinus:SetPoint("LEFT", sizeLabel, "RIGHT", 8, 0)
+    sizeMinus:SetText("-")
+    sizeMinus:SetScript("OnClick", function()
+        PartyOffCD:SetTrackerIconScale(PartyOffCD:GetTrackerIconScale() - 5)
+        PartyOffCD:RefreshConfigPanel()
+        PartyOffCD:RefreshTracker()
+    end)
+    self.configRows[#self.configRows + 1] = sizeMinus
+
+    local sizeValue = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    sizeValue:SetPoint("LEFT", sizeMinus, "RIGHT", 7, 0)
+    sizeValue:SetText(string.format("%d%%", self:GetTrackerIconScale()))
+    self.configRows[#self.configRows + 1] = sizeValue
+
+    local sizePlus = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    sizePlus:SetSize(20, 20)
+    sizePlus:SetPoint("LEFT", sizeValue, "RIGHT", 7, 0)
+    sizePlus:SetText("+")
+    sizePlus:SetScript("OnClick", function()
+        PartyOffCD:SetTrackerIconScale(PartyOffCD:GetTrackerIconScale() + 5)
+        PartyOffCD:RefreshConfigPanel()
+        PartyOffCD:RefreshTracker()
+    end)
+    self.configRows[#self.configRows + 1] = sizePlus
+
+    local currentScale = self:GetTrackerIconScale()
+    sizeMinus:SetEnabled(currentScale > MIN_TRACKER_ICON_SCALE)
+    sizePlus:SetEnabled(currentScale < MAX_TRACKER_ICON_SCALE)
+    y = y - 28
+
+    local classBuckets = {}
+    local classLookup = {}
     for _, classToken in ipairs(CLASS_ORDER) do
         local spellList = {}
         for spellID, meta in pairs(SPELLS) do
@@ -225,158 +339,276 @@ function PartyOffCD:RefreshConfigPanel()
                 return aName < bName
             end)
 
-            local classCheck = CreateCheckbox(nil, content, "")
-            classCheck:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
-            classCheck:SetChecked(self.db.classEnabled[classToken] ~= false)
-            classCheck:SetScript("OnClick", function(selfCheck)
-                PartyOffCD:SetClassEnabled(classToken, selfCheck:GetChecked())
-            end)
-            self.configRows[#self.configRows + 1] = classCheck
-
-            local header = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            header:SetPoint("LEFT", classCheck, "RIGHT", 6, 0)
-            header:SetText(self:GetClassLabel(classToken))
-            self.configRows[#self.configRows + 1] = header
-
-            local addButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-            addButton:SetSize(22, 18)
-            addButton:SetPoint("TOPLEFT", content, "TOPLEFT", 230, y + 1)
-            addButton:SetText(self.classAddEditorState[classToken] and "-" or "+")
-            addButton:SetScript("OnClick", function()
-                PartyOffCD.classAddEditorState[classToken] = not PartyOffCD.classAddEditorState[classToken]
-                PartyOffCD:RefreshConfigPanel()
-            end)
-            self.configRows[#self.configRows + 1] = addButton
-
-            y = y - 26
-
-            if self.classAddEditorState[classToken] then
-                local spellIDBox = CreateNumericEditBox(nil, content, 52, 8)
-                spellIDBox:SetPoint("TOPLEFT", content, "TOPLEFT", 20, y)
-                spellIDBox:SetText("")
-                self.configRows[#self.configRows + 1] = spellIDBox
-
-                local spellIDLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                spellIDLabel:SetPoint("LEFT", spellIDBox, "RIGHT", 4, 0)
-                spellIDLabel:SetText("ID")
-                self.configRows[#self.configRows + 1] = spellIDLabel
-
-                local cdBox = CreateNumericEditBox(nil, content, 38, 5)
-                cdBox:SetPoint("LEFT", spellIDLabel, "RIGHT", 10, 0)
-                cdBox:SetText("90")
-                self.configRows[#self.configRows + 1] = cdBox
-
-                local cdLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                cdLabel:SetPoint("LEFT", cdBox, "RIGHT", 4, 0)
-                cdLabel:SetText("CD")
-                self.configRows[#self.configRows + 1] = cdLabel
-
-                local typeButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-                typeButton:SetSize(42, 18)
-                typeButton:SetPoint("LEFT", cdLabel, "RIGHT", 10, 0)
-                typeButton:SetText("OFF")
-                typeButton.currentType = "OFF"
-                typeButton:SetScript("OnClick", function(selfButton)
-                    selfButton.currentType = GetNextSpellType(selfButton.currentType)
-                    selfButton:SetText(selfButton.currentType)
-                end)
-                self.configRows[#self.configRows + 1] = typeButton
-
-                local saveNewButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-                saveNewButton:SetSize(42, 18)
-                saveNewButton:SetPoint("LEFT", typeButton, "RIGHT", 6, 0)
-                saveNewButton:SetText("Save")
-                saveNewButton:SetScript("OnClick", function()
-                    if PartyOffCD:AddCustomSpell(classToken, spellIDBox:GetText(), cdBox:GetText(), typeButton.currentType) then
-                        PartyOffCD.classAddEditorState[classToken] = false
-                        PartyOffCD:RefreshConfigPanel()
-                    end
-                end)
-                self.configRows[#self.configRows + 1] = saveNewButton
-
-                y = y - 24
-            end
-
-            for _, spellID in ipairs(spellList) do
-                local spellName, texture = SafeGetSpellInfo(spellID)
-                local meta = self:GetDisplayMeta(spellID) or SPELLS[spellID]
-
-                local spellCheck = CreateCheckbox(nil, content, "")
-                spellCheck:SetPoint("TOPLEFT", content, "TOPLEFT", 16, y)
-                spellCheck:SetChecked(self:IsSpellEnabled(spellID))
-                spellCheck:SetEnabled(self.db.classEnabled[classToken] ~= false)
-                spellCheck:SetScript("OnClick", function(selfCheck)
-                    PartyOffCD:SetSpellEnabled(spellID, selfCheck:GetChecked())
-                end)
-                self.configRows[#self.configRows + 1] = spellCheck
-
-                local icon = content:CreateTexture(nil, "ARTWORK")
-                icon:SetSize(18, 18)
-                icon:SetPoint("LEFT", spellCheck, "RIGHT", 2, 0)
-                icon:SetTexture(texture or 134400)
-                self.configRows[#self.configRows + 1] = icon
-
-                local label = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                label:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-                local playerOverride = self:GetPlayerOverride(spellID, self:GetPlayerCanonical())
-                local customSuffix = meta.custom and ", custom" or ""
-                local overrideSuffix = playerOverride and ", override" or ""
-                label:SetWidth(155)
-                label:SetJustifyH("LEFT")
-                label:SetText(string.format("%s (%ss, id %d%s%s)", spellName or ("Spell " .. spellID), meta.cd, spellID, customSuffix, overrideSuffix))
-                if self.db.classEnabled[classToken] == false then
-                    label:SetTextColor(0.55, 0.55, 0.55)
-                else
-                    label:SetTextColor(0.9, 0.9, 0.9)
-                end
-                self.configRows[#self.configRows + 1] = label
-
-                local editButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-                editButton:SetSize(40, 18)
-                editButton:SetPoint("TOPLEFT", content, "TOPLEFT", 215, y + 1)
-                editButton:SetText("Edit")
-                self.configRows[#self.configRows + 1] = editButton
-
-                local editBox = CreateNumericEditBox(nil, content, 34, 5)
-                editBox:SetPoint("TOPLEFT", content, "TOPLEFT", 259, y)
-                editBox:SetText(tostring(meta.cd))
-                editBox:Hide()
-                self.configRows[#self.configRows + 1] = editBox
-
-                local saveButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-                saveButton:SetSize(42, 18)
-                saveButton:SetPoint("TOPLEFT", content, "TOPLEFT", 299, y + 1)
-                saveButton:SetText("Save")
-                saveButton:Hide()
-                self.configRows[#self.configRows + 1] = saveButton
-
-                editButton:SetScript("OnClick", function()
-                    editBox:SetText(tostring((PartyOffCD:GetDisplayMeta(spellID) or meta).cd))
-                    editBox:Show()
-                    saveButton:Show()
-                end)
-
-                saveButton:SetScript("OnClick", function()
-                    local newCooldown = tonumber(editBox:GetText())
-                    if not newCooldown or newCooldown <= 0 then
-                        DebugPrint("Enter a valid CD in seconds.")
-                        return
-                    end
-
-                    if PartyOffCD:AddCustomSpell(meta.class, spellID, newCooldown, meta.type) then
-                        editBox:Hide()
-                        saveButton:Hide()
-                    end
-                end)
-
-                y = y - 22
-            end
-
-            y = y - 8
+            local _, classIcon = SafeGetSpellInfo(spellList[1])
+            local bucket = { classToken = classToken, spellList = spellList, icon = classIcon or 134400 }
+            classBuckets[#classBuckets + 1] = bucket
+            classLookup[classToken] = bucket
         end
     end
 
-    content:SetHeight(math.max(1, -y + 8))
+    if #classBuckets == 0 then
+        local empty = content:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+        empty:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+        empty:SetText("No spells available.")
+        self.configRows[#self.configRows + 1] = empty
+        content:SetHeight(math.max(1, -y + 32))
+        return
+    end
+
+    if not self.selectedClassToken or not classLookup[self.selectedClassToken] then
+        self.selectedClassToken = classBuckets[1].classToken
+    end
+
+    local selectedClassToken = self.selectedClassToken
+    local selectedBucket = classLookup[selectedClassToken]
+
+    local panelTopY = y
+    local leftX = 0
+    local leftWidth = 112
+    local rightX = 122
+
+    local classesHeader = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    classesHeader:SetPoint("TOPLEFT", content, "TOPLEFT", leftX, panelTopY)
+    classesHeader:SetText("Classes")
+    self.configRows[#self.configRows + 1] = classesHeader
+
+    local leftY = panelTopY - 20
+    for _, bucket in ipairs(classBuckets) do
+        local isSelected = bucket.classToken == selectedClassToken
+        local row = CreateFrame("Button", nil, content)
+        row:SetSize(leftWidth, 20)
+        row:SetPoint("TOPLEFT", content, "TOPLEFT", leftX, leftY)
+        row:SetScript("OnClick", function()
+            PartyOffCD.selectedClassToken = bucket.classToken
+            PartyOffCD:RefreshConfigPanel()
+        end)
+        self.configRows[#self.configRows + 1] = row
+
+        local rowBg = row:CreateTexture(nil, "BACKGROUND")
+        rowBg:SetAllPoints()
+        if isSelected then
+            rowBg:SetColorTexture(0.62, 0.05, 0.07, 0.92)
+        else
+            rowBg:SetColorTexture(0.10, 0.10, 0.10, 0.82)
+        end
+        self.configRows[#self.configRows + 1] = rowBg
+
+        local rowBorder = row:CreateTexture(nil, "BORDER")
+        rowBorder:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+        rowBorder:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
+        rowBorder:SetHeight(1)
+        if isSelected then
+            rowBorder:SetColorTexture(0.95, 0.82, 0.2, 0.9)
+        else
+            rowBorder:SetColorTexture(0.35, 0.35, 0.35, 0.6)
+        end
+        self.configRows[#self.configRows + 1] = rowBorder
+
+        local rowIcon = row:CreateTexture(nil, "ARTWORK")
+        rowIcon:SetSize(14, 14)
+        rowIcon:SetPoint("LEFT", row, "LEFT", 4, 0)
+        rowIcon:SetTexture(bucket.icon or 134400)
+        self.configRows[#self.configRows + 1] = rowIcon
+
+        local rowLabel = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        rowLabel:SetPoint("LEFT", rowIcon, "RIGHT", 5, 0)
+        rowLabel:SetWidth(leftWidth - 26)
+        rowLabel:SetJustifyH("LEFT")
+        rowLabel:SetText(self:GetClassLabel(bucket.classToken))
+        if isSelected then
+            rowLabel:SetTextColor(1, 0.96, 0.2)
+        else
+            rowLabel:SetTextColor(0.85, 0.85, 0.85)
+        end
+        self.configRows[#self.configRows + 1] = rowLabel
+
+        if not isSelected then
+            row:SetScript("OnEnter", function()
+                rowBg:SetColorTexture(0.16, 0.16, 0.16, 0.92)
+            end)
+            row:SetScript("OnLeave", function()
+                rowBg:SetColorTexture(0.10, 0.10, 0.10, 0.82)
+            end)
+        end
+
+        leftY = leftY - 22
+    end
+
+    local spellsHeader = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    spellsHeader:SetPoint("TOPLEFT", content, "TOPLEFT", rightX, panelTopY)
+    spellsHeader:SetText("Spells: " .. self:GetClassLabel(selectedClassToken))
+    self.configRows[#self.configRows + 1] = spellsHeader
+
+    local rightY = panelTopY - 20
+
+    local classCheck = CreateCheckbox(nil, content, "")
+    classCheck:SetPoint("TOPLEFT", content, "TOPLEFT", rightX, rightY)
+    classCheck:SetChecked(self.db.classEnabled[selectedClassToken] ~= false)
+    classCheck:SetScript("OnClick", function(selfCheck)
+        PartyOffCD:SetClassEnabled(selectedClassToken, selfCheck:GetChecked())
+        PartyOffCD:RefreshConfigPanel()
+    end)
+    self.configRows[#self.configRows + 1] = classCheck
+
+    local classCheckLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    classCheckLabel:SetPoint("LEFT", classCheck, "RIGHT", 2, 0)
+    classCheckLabel:SetText("Enable class")
+    self.configRows[#self.configRows + 1] = classCheckLabel
+
+    local addButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    addButton:SetSize(76, 20)
+    addButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 114, rightY + 1)
+    addButton:SetText(self.classAddEditorState[selectedClassToken] and "Close" or "Add New")
+    addButton:SetScript("OnClick", function()
+        PartyOffCD.classAddEditorState[selectedClassToken] = not PartyOffCD.classAddEditorState[selectedClassToken]
+        PartyOffCD:RefreshConfigPanel()
+    end)
+    self.configRows[#self.configRows + 1] = addButton
+    rightY = rightY - 24
+
+    if self.classAddEditorState[selectedClassToken] then
+        local spellIDBox = CreateNumericEditBox(nil, content, 54, 8)
+        spellIDBox:SetPoint("TOPLEFT", content, "TOPLEFT", rightX, rightY)
+        spellIDBox:SetText("")
+        self.configRows[#self.configRows + 1] = spellIDBox
+
+        local spellIDLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        spellIDLabel:SetPoint("LEFT", spellIDBox, "RIGHT", 4, 0)
+        spellIDLabel:SetText("ID")
+        self.configRows[#self.configRows + 1] = spellIDLabel
+
+        local cdBox = CreateNumericEditBox(nil, content, 40, 5)
+        cdBox:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 94, rightY)
+        cdBox:SetText("90")
+        self.configRows[#self.configRows + 1] = cdBox
+
+        local cdLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        cdLabel:SetPoint("LEFT", cdBox, "RIGHT", 4, 0)
+        cdLabel:SetText("CD")
+        self.configRows[#self.configRows + 1] = cdLabel
+        rightY = rightY - 24
+
+        local offCheck = CreateCheckbox(nil, content, "Offensive")
+        offCheck:SetPoint("TOPLEFT", content, "TOPLEFT", rightX, rightY)
+        offCheck:SetChecked(true)
+        self.configRows[#self.configRows + 1] = offCheck
+
+        local defCheck = CreateCheckbox(nil, content, "Defensive")
+        defCheck:SetPoint("LEFT", offCheck, "RIGHT", 10, 0)
+        defCheck:SetChecked(false)
+        self.configRows[#self.configRows + 1] = defCheck
+
+        offCheck:SetScript("OnClick", function(selfCheck)
+            if selfCheck:GetChecked() then
+                defCheck:SetChecked(false)
+            else
+                selfCheck:SetChecked(true)
+            end
+        end)
+
+        defCheck:SetScript("OnClick", function(selfCheck)
+            if selfCheck:GetChecked() then
+                offCheck:SetChecked(false)
+            else
+                selfCheck:SetChecked(true)
+            end
+        end)
+
+        local saveNewButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+        saveNewButton:SetSize(50, 18)
+        saveNewButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 168, rightY + 2)
+        saveNewButton:SetText("Save")
+        saveNewButton:SetScript("OnClick", function()
+            local spellType = offCheck:GetChecked() and "OFF" or "DEF"
+            if PartyOffCD:AddCustomSpell(selectedClassToken, spellIDBox:GetText(), cdBox:GetText(), spellType) then
+                PartyOffCD.classAddEditorState[selectedClassToken] = false
+                PartyOffCD:RefreshConfigPanel()
+            end
+        end)
+        self.configRows[#self.configRows + 1] = saveNewButton
+        rightY = rightY - 24
+    end
+
+    for _, spellID in ipairs(selectedBucket.spellList) do
+        local spellName, texture = SafeGetSpellInfo(spellID)
+        local meta = self:GetDisplayMeta(spellID) or SPELLS[spellID]
+
+        local spellCheck = CreateCheckbox(nil, content, "")
+        spellCheck:SetPoint("TOPLEFT", content, "TOPLEFT", rightX, rightY)
+        spellCheck:SetChecked(self:IsSpellEnabled(spellID))
+        spellCheck:SetEnabled(self.db.classEnabled[selectedClassToken] ~= false)
+        spellCheck:SetScript("OnClick", function(selfCheck)
+            PartyOffCD:SetSpellEnabled(spellID, selfCheck:GetChecked())
+        end)
+        self.configRows[#self.configRows + 1] = spellCheck
+
+        local icon = content:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(18, 18)
+        icon:SetPoint("LEFT", spellCheck, "RIGHT", 2, 0)
+        icon:SetTexture(texture or 134400)
+        self.configRows[#self.configRows + 1] = icon
+
+        local label = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        label:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+        local playerOverride = self:GetPlayerOverride(spellID, self:GetPlayerCanonical())
+        local customSuffix = meta.custom and ", custom" or ""
+        local overrideSuffix = playerOverride and ", override" or ""
+        label:SetWidth(122)
+        label:SetJustifyH("LEFT")
+        label:SetText(string.format("%s (%ss, id %d%s%s)", spellName or ("Spell " .. spellID), meta.cd, spellID, customSuffix, overrideSuffix))
+        if self.db.classEnabled[selectedClassToken] == false then
+            label:SetTextColor(0.55, 0.55, 0.55)
+        else
+            label:SetTextColor(0.9, 0.9, 0.9)
+        end
+        self.configRows[#self.configRows + 1] = label
+
+        local editButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+        editButton:SetSize(36, 18)
+        editButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 160, rightY + 1)
+        editButton:SetText("Edit")
+        self.configRows[#self.configRows + 1] = editButton
+
+        local editBox = CreateNumericEditBox(nil, content, 30, 5)
+        editBox:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 160, rightY)
+        editBox:SetText(tostring(meta.cd))
+        editBox:Hide()
+        self.configRows[#self.configRows + 1] = editBox
+
+        local saveButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+        saveButton:SetSize(34, 18)
+        saveButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 194, rightY + 1)
+        saveButton:SetText("Save")
+        saveButton:Hide()
+        self.configRows[#self.configRows + 1] = saveButton
+
+        editButton:SetScript("OnClick", function()
+            editBox:SetText(tostring((PartyOffCD:GetDisplayMeta(spellID) or meta).cd))
+            editButton:Hide()
+            editBox:Show()
+            saveButton:Show()
+        end)
+
+        saveButton:SetScript("OnClick", function()
+            local newCooldown = tonumber(editBox:GetText())
+            if not newCooldown or newCooldown <= 0 then
+                DebugPrint("Enter a valid CD in seconds.")
+                return
+            end
+
+            if PartyOffCD:AddCustomSpell(meta.class, spellID, newCooldown, meta.type) then
+                editBox:Hide()
+                saveButton:Hide()
+                editButton:Show()
+            end
+        end)
+
+        rightY = rightY - 22
+    end
+
+    rightY = rightY - 8
+    y = math.min(leftY, rightY)
+    content:SetHeight(math.max(1, -y + 10))
 end
 
 function PartyOffCD:ToggleConfigPanel()

@@ -6,6 +6,11 @@ assert(PartyOffCD, "PartyOffCD: frame missing before loading Spells.lua")
 assert(PartyOffCDCore, "PartyOffCD: core missing before loading Spells.lua")
 
 local DB_DEFAULTS = PartyOffCDCore.DB_DEFAULTS or PartyOffCDCore.DEFAULTS
+local MAX_TRACKER_COLUMNS = PartyOffCDCore.MAX_TRACKER_COLUMNS or 8
+local MAX_VERTICAL_TRACKER_COLUMNS = PartyOffCDCore.MAX_VERTICAL_TRACKER_COLUMNS or 4
+local MIN_TRACKER_ICON_SCALE = PartyOffCDCore.MIN_TRACKER_ICON_SCALE or 10
+local MAX_TRACKER_ICON_SCALE = PartyOffCDCore.MAX_TRACKER_ICON_SCALE or 100
+local BASE_ICON_SIZE = PartyOffCDCore.ICON_SIZE or 30
 
 local SPELL_TYPE_PRIORITY = {
     OFF = 1,
@@ -458,6 +463,40 @@ end
 function PartyOffCD:InitializeDB()
     PartyOffCDDB = CopyDefaults(PartyOffCDDB, DB_DEFAULTS)
     self.db = PartyOffCDDB
+
+    local attach = string.upper(tostring(self.db.trackerAttach or DB_DEFAULTS.trackerAttach or "LEFT"))
+    if attach ~= "LEFT" and attach ~= "RIGHT" and attach ~= "TOP" and attach ~= "BOTTOM" then
+        attach = DB_DEFAULTS.trackerAttach or "LEFT"
+    end
+    self.db.trackerAttach = attach
+
+    local columns = tonumber(self.db.trackerColumns) or tonumber(DB_DEFAULTS.trackerColumns) or 1
+    columns = math.floor(columns)
+    local maxColumns = MAX_TRACKER_COLUMNS
+    if attach == "TOP" or attach == "BOTTOM" then
+        maxColumns = math.min(MAX_TRACKER_COLUMNS, MAX_VERTICAL_TRACKER_COLUMNS)
+    end
+    if columns < 1 then
+        columns = 1
+    elseif columns > maxColumns then
+        columns = maxColumns
+    end
+    self.db.trackerColumns = columns
+
+    local iconScale = tonumber(self.db.trackerIconScale)
+    if not iconScale and self.db.trackerIconSize then
+        iconScale = (tonumber(self.db.trackerIconSize) or BASE_ICON_SIZE) * 100 / BASE_ICON_SIZE
+    end
+    if not iconScale then
+        iconScale = tonumber(DB_DEFAULTS.trackerIconScale) or 100
+    end
+    iconScale = math.floor(iconScale)
+    if iconScale < MIN_TRACKER_ICON_SCALE then
+        iconScale = MIN_TRACKER_ICON_SCALE
+    elseif iconScale > MAX_TRACKER_ICON_SCALE then
+        iconScale = MAX_TRACKER_ICON_SCALE
+    end
+    self.db.trackerIconScale = iconScale
 
     for _, classToken in ipairs(CLASS_ORDER) do
         if self.db.classEnabled[classToken] == nil then

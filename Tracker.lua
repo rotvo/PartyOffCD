@@ -6,6 +6,10 @@ assert(PartyOffCD, "PartyOffCD: frame missing before loading Tracker.lua")
 assert(PartyOffCDCore, "PartyOffCD: core missing before loading Tracker.lua")
 
 local MAX_TRACKED_ROWS = PartyOffCDCore.MAX_TRACKED_ROWS
+local MAX_TRACKER_COLUMNS = PartyOffCDCore.MAX_TRACKER_COLUMNS or 8
+local MAX_VERTICAL_TRACKER_COLUMNS = PartyOffCDCore.MAX_VERTICAL_TRACKER_COLUMNS or 4
+local MIN_TRACKER_ICON_SCALE = PartyOffCDCore.MIN_TRACKER_ICON_SCALE or 10
+local MAX_TRACKER_ICON_SCALE = PartyOffCDCore.MAX_TRACKER_ICON_SCALE or 100
 local ICON_SIZE = PartyOffCDCore.ICON_SIZE
 local ICON_SPACING = PartyOffCDCore.ICON_SPACING
 local INTERRUPT_BAR_WIDTH = PartyOffCDCore.INTERRUPT_BAR_WIDTH
@@ -16,6 +20,7 @@ local FALLBACK_Y = PartyOffCDCore.FALLBACK_Y
 local SPELLS = PartyOffCDCore.SPELLS
 local SPELL_TYPE_PRIORITY = PartyOffCDCore.SPELL_TYPE_PRIORITY
 local DB_DEFAULTS = PartyOffCDCore.DEFAULTS
+local TRACKER_TYPE_GAP = ICON_SPACING + 8
 local MISSING_BUFF_ICON_SIZE = 36
 local MISSING_BUFF_ICON_SPACING = 8
 local MISSING_BUFFS = {
@@ -35,6 +40,53 @@ local GetUnitFullName = PartyOffCDCore.GetUnitFullName
 local NormalizeName = PartyOffCDCore.NormalizeName
 local ApplyLightOutline = PartyOffCDCore.ApplyLightOutline
 
+local function IsValidTrackerAttach(attach)
+    return attach == "LEFT" or attach == "RIGHT" or attach == "TOP" or attach == "BOTTOM"
+end
+
+local function NormalizeTrackerAttach(attach)
+    attach = string.upper(tostring(attach or ""))
+    if not IsValidTrackerAttach(attach) then
+        return "LEFT"
+    end
+    return attach
+end
+
+local function GetSpacingForIconSize(iconSize)
+    return math.max(1, math.floor(ICON_SPACING * (iconSize / ICON_SIZE)))
+end
+
+local function GetCrossAxisSize(iconSize, crossSlots)
+    if crossSlots <= 0 then
+        return 0
+    end
+    local spacing = GetSpacingForIconSize(iconSize)
+    return (crossSlots * iconSize) + (math.max(0, crossSlots - 1) * spacing)
+end
+
+local function GetMaxIconSizeForCrossSlots(maxCrossSize, crossSlots)
+    if not maxCrossSize or maxCrossSize <= 0 or not crossSlots or crossSlots <= 0 then
+        return ICON_SIZE
+    end
+
+    local low = 1
+    local high = math.max(1, math.floor(maxCrossSize))
+    local best = 1
+
+    while low <= high do
+        local mid = math.floor((low + high) / 2)
+        local usedSize = GetCrossAxisSize(mid, crossSlots)
+        if usedSize <= maxCrossSize then
+            best = mid
+            low = mid + 1
+        else
+            high = mid - 1
+        end
+    end
+
+    return best
+end
+
 local function ResolveMissingBuffSpellID(definition)
     if definition.resolvedSpellID ~= nil then
         return definition.resolvedSpellID or nil
@@ -51,41 +103,89 @@ local function ResolveMissingBuffSpellID(definition)
     return nil
 end
 
+local function ToSafeNumber(value)
+    if value == nil then
+        return nil
+    end
+
+    local ok, parsed = pcall(function()
+        return tonumber(tostring(value))
+    end)
+    if ok then
+        return parsed
+    end
+
+    return nil
+end
+
 local function UnitHasBuffFromSpellID(unit, spellID)
-    if not unit or not UnitExists(unit) or not spellID then
+    local targetSpellID = ToSafeNumber(spellID)
+    if not unit or not UnitExists(unit) or not targetSpellID then
         return false
     end
 
     if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellID then
-        local aura = C_UnitAuras.GetAuraDataBySpellID(unit, spellID, "HELPFUL")
+        local aura = C_UnitAuras.GetAuraDataBySpellID(unit, targetSpellID, "HELPFUL")
         if aura then
             return true
         end
     end
 
     if AuraUtil and AuraUtil.FindAuraBySpellID then
-        local aura = AuraUtil.FindAuraBySpellID(spellID, unit, "HELPFUL")
-        if aura then
+        local ok, aura = pcall(AuraUtil.FindAuraBySpellID, targetSpellID, unit, "HELPFUL")
+        if ok and aura then
             return true
         end
     end
 
-    local targetName = SafeGetSpellInfo(spellID)
-    if targetName and AuraUtil and AuraUtil.FindAuraByName then
-        local aura = AuraUtil.FindAuraByName(targetName, unit, "HELPFUL")
-        if aura then
-            return true
+    if UnitAura then
+        for index = 1, 80 do
+            local auraName, _, _, _, _, _, _, _, _, auraSpellID = UnitAura(unit, index, "HELPFUL")
+            if not auraName then
+                break
+            end
+            auraSpellID = ToSafeNumber(auraSpellID)
+            if auraSpellID and auraSpellID == targetSpellID then
+                return true
+            end
         end
     end
 
     if UnitBuff then
-        for index = 1, 40 do
+        for index = 1, 80 do
             local auraName, _, _, _, _, _, _, _, _, auraSpellID = UnitBuff(unit, index)
             if not auraName then
                 break
             end
-            if auraSpellID == spellID or (targetName and auraName == targetName) then
+            auraSpellID = ToSafeNumber(auraSpellID)
+            if auraSpellID and auraSpellID == targetSpellID then
                 return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function UnitHasBuffFromDefinition(unit, definition)
+    if not definition then
+        return false
+    end
+
+    for _, candidateSpellID in ipairs(definition.spellIDs or {}) do
+        if UnitHasBuffFromSpellID(unit, candidateSpellID) then
+            return true
+        end
+    end
+
+    if AuraUtil and AuraUtil.FindAuraByName then
+        for _, candidateSpellID in ipairs(definition.spellIDs or {}) do
+            local candidateName = SafeGetSpellInfo(candidateSpellID)
+            if candidateName then
+                local ok, aura = pcall(AuraUtil.FindAuraByName, candidateName, unit, "HELPFUL")
+                if ok and aura then
+                    return true
+                end
             end
         end
     end
@@ -202,6 +302,132 @@ local function GetCompactPartyAnchor(index)
     return nil
 end
 
+function PartyOffCD:GetTrackerAttach()
+    local dbAttach = self.db and self.db.trackerAttach
+    local defaultAttach = (DB_DEFAULTS and DB_DEFAULTS.trackerAttach) or "LEFT"
+    return NormalizeTrackerAttach(dbAttach or defaultAttach)
+end
+
+function PartyOffCD:GetTrackerColumnLimit(attach)
+    attach = NormalizeTrackerAttach(attach or self:GetTrackerAttach())
+    if attach == "TOP" or attach == "BOTTOM" then
+        return math.min(MAX_TRACKER_COLUMNS, MAX_VERTICAL_TRACKER_COLUMNS)
+    end
+    return MAX_TRACKER_COLUMNS
+end
+
+function PartyOffCD:GetTrackerColumns()
+    local dbColumns = self.db and self.db.trackerColumns
+    local defaultColumns = (DB_DEFAULTS and DB_DEFAULTS.trackerColumns) or 1
+    local maxColumns = self:GetTrackerColumnLimit()
+    local columns = math.floor(tonumber(dbColumns) or tonumber(defaultColumns) or 1)
+    if columns < 1 then
+        columns = 1
+    elseif columns > maxColumns then
+        columns = maxColumns
+    end
+    return columns
+end
+
+function PartyOffCD:GetTrackerIconScale()
+    local dbScale = self.db and self.db.trackerIconScale
+    local defaultScale = (DB_DEFAULTS and DB_DEFAULTS.trackerIconScale) or 100
+    local scale = math.floor(tonumber(dbScale) or tonumber(defaultScale) or 100)
+    if scale < MIN_TRACKER_ICON_SCALE then
+        scale = MIN_TRACKER_ICON_SCALE
+    elseif scale > MAX_TRACKER_ICON_SCALE then
+        scale = MAX_TRACKER_ICON_SCALE
+    end
+    return scale
+end
+
+function PartyOffCD:SetTrackerAttach(attach)
+    if not self.db then
+        return false
+    end
+
+    local normalized = NormalizeTrackerAttach(attach)
+    if self.db.trackerAttach == normalized then
+        return false
+    end
+
+    self.db.trackerAttach = normalized
+    local maxColumns = self:GetTrackerColumnLimit(normalized)
+    local currentColumns = math.floor(tonumber(self.db.trackerColumns) or 1)
+    if currentColumns > maxColumns then
+        self.db.trackerColumns = maxColumns
+    elseif currentColumns < 1 then
+        self.db.trackerColumns = 1
+    end
+    return true
+end
+
+function PartyOffCD:SetTrackerColumns(columns)
+    if not self.db then
+        return false
+    end
+
+    local maxColumns = self:GetTrackerColumnLimit()
+    local value = math.floor(tonumber(columns) or 1)
+    if value < 1 then
+        value = 1
+    elseif value > maxColumns then
+        value = maxColumns
+    end
+
+    if self.db.trackerColumns == value then
+        return false
+    end
+
+    self.db.trackerColumns = value
+    return true
+end
+
+function PartyOffCD:SetTrackerIconScale(scale)
+    if not self.db then
+        return false
+    end
+
+    local value = math.floor(tonumber(scale) or 100)
+    if value < MIN_TRACKER_ICON_SCALE then
+        value = MIN_TRACKER_ICON_SCALE
+    elseif value > MAX_TRACKER_ICON_SCALE then
+        value = MAX_TRACKER_ICON_SCALE
+    end
+
+    if self.db.trackerIconScale == value then
+        return false
+    end
+
+    self.db.trackerIconScale = value
+    return true
+end
+
+function PartyOffCD:GetTrackerIconMetrics(row, attach, crossSlots)
+    local iconScale = self:GetTrackerIconScale()
+    local iconSize = math.max(8, math.floor(ICON_SIZE * (iconScale / 100)))
+    local iconSpacing = GetSpacingForIconSize(iconSize)
+
+    if (attach == "LEFT" or attach == "RIGHT") and crossSlots and crossSlots > 0 then
+        local target = row and row:GetParent()
+        if target and target ~= self.trackerFrame and target.GetHeight then
+            local targetHeight = target:GetHeight() or 0
+            if targetHeight > 0 then
+                local maxIconSize = GetMaxIconSizeForCrossSlots(targetHeight, crossSlots)
+                iconSize = math.floor(maxIconSize * (iconScale / 100))
+                if iconSize < 8 then
+                    iconSize = 8
+                elseif iconSize > maxIconSize then
+                    iconSize = maxIconSize
+                end
+                iconSpacing = GetSpacingForIconSize(iconSize)
+            end
+        end
+    end
+
+    return iconSize, iconSpacing
+end
+
 function PartyOffCD:CreateTrackerFrame()
     if self.trackerFrame then
         return
@@ -298,9 +524,10 @@ end
 
 function PartyOffCD:CreateRow(index)
     local row = CreateFrame("Frame", nil, self.trackerFrame)
-    row:SetSize(240, 28)
+    row:SetSize(ICON_SIZE, ICON_SIZE)
     row.index = index
     row.icons = {}
+    row.layoutAttach = "LEFT"
 
     row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.label:SetPoint("RIGHT", row, "LEFT", -6, 0)
@@ -395,9 +622,21 @@ function PartyOffCD:AnchorRow(row, index)
 
     local target = GetCompactPartyAnchor(index)
     if target then
+        local attach = self:GetTrackerAttach()
+        row.layoutAttach = attach
         row:SetParent(target)
-        row:SetPoint("RIGHT", target, "LEFT", -4, 0)
+
+        if attach == "RIGHT" then
+            row:SetPoint("TOPLEFT", target, "TOPRIGHT", 4, 0)
+        elseif attach == "TOP" then
+            row:SetPoint("BOTTOMLEFT", target, "TOPLEFT", 0, 4)
+        elseif attach == "BOTTOM" then
+            row:SetPoint("TOPLEFT", target, "BOTTOMLEFT", 0, -4)
+        else
+            row:SetPoint("TOPRIGHT", target, "TOPLEFT", -4, 0)
+        end
     else
+        row.layoutAttach = "LEFT"
         row:SetParent(self.trackerFrame)
         if index == 1 then
             row:SetPoint("TOPLEFT", self.trackerFrame, "TOPLEFT", 0, 0)
@@ -420,11 +659,107 @@ function PartyOffCD:RenderRow(row, rosterEntry)
     row:Show()
     self:AnchorRow(row, row.index)
 
-    local previousEntry = nil
-    for iconIndex, entry in ipairs(entries) do
+    local attach = row.layoutAttach or self:GetTrackerAttach()
+    local columns = self:GetTrackerColumns()
+    local horizontalAttach = attach == "LEFT" or attach == "RIGHT"
+
+    local groupedEntries = {}
+    local currentGroup = nil
+    for _, entry in ipairs(entries) do
+        local entryType = entry.meta and entry.meta.type or "OFF"
+        if not currentGroup or currentGroup.type ~= entryType then
+            currentGroup = {
+                type = entryType,
+                entries = {},
+            }
+            groupedEntries[#groupedEntries + 1] = currentGroup
+        end
+        currentGroup.entries[#currentGroup.entries + 1] = entry
+    end
+
+    local maxCrossSlots = 1
+    for _, group in ipairs(groupedEntries) do
+        local groupCount = #group.entries
+        local crossSlots = 1
+        if horizontalAttach then
+            crossSlots = math.ceil(groupCount / columns)
+        else
+            crossSlots = math.min(columns, groupCount)
+        end
+        if crossSlots > maxCrossSlots then
+            maxCrossSlots = crossSlots
+        end
+    end
+
+    local iconSize, iconSpacing = self:GetTrackerIconMetrics(row, attach, maxCrossSlots)
+    local slots = {}
+    local awayOffset = 0
+    local maxCrossSize = iconSize
+    for groupIndex, group in ipairs(groupedEntries) do
+        local groupCount = #group.entries
+        local sectionAwaySize
+        local sectionCrossSize
+
+        if horizontalAttach then
+            local awaySlots = math.min(columns, groupCount)
+            local crossSlots = math.ceil(groupCount / columns)
+            sectionAwaySize = (awaySlots * iconSize) + (math.max(0, awaySlots - 1) * iconSpacing)
+            sectionCrossSize = (crossSlots * iconSize) + (math.max(0, crossSlots - 1) * iconSpacing)
+
+            for entryIndex, entry in ipairs(group.entries) do
+                local awayIndex = (entryIndex - 1) % columns
+                local crossIndex = math.floor((entryIndex - 1) / columns)
+                slots[#slots + 1] = {
+                    entry = entry,
+                    away = awayOffset + (awayIndex * (iconSize + iconSpacing)),
+                    cross = crossIndex * (iconSize + iconSpacing),
+                }
+            end
+        else
+            local crossSlots = math.min(columns, groupCount)
+            local awaySlots = math.ceil(groupCount / columns)
+            sectionCrossSize = (crossSlots * iconSize) + (math.max(0, crossSlots - 1) * iconSpacing)
+            sectionAwaySize = (awaySlots * iconSize) + (math.max(0, awaySlots - 1) * iconSpacing)
+
+            for entryIndex, entry in ipairs(group.entries) do
+                local crossIndex = (entryIndex - 1) % columns
+                local awayIndex = math.floor((entryIndex - 1) / columns)
+                slots[#slots + 1] = {
+                    entry = entry,
+                    away = awayOffset + (awayIndex * (iconSize + iconSpacing)),
+                    cross = crossIndex * (iconSize + iconSpacing),
+                }
+            end
+        end
+
+        if sectionCrossSize > maxCrossSize then
+            maxCrossSize = sectionCrossSize
+        end
+
+        awayOffset = awayOffset + sectionAwaySize
+        if groupIndex < #groupedEntries then
+            awayOffset = awayOffset + TRACKER_TYPE_GAP
+        end
+    end
+
+    local totalAwaySize = math.max(iconSize, awayOffset)
+    local totalCrossSize = math.max(iconSize, maxCrossSize)
+    local rowWidth, rowHeight
+    if horizontalAttach then
+        rowWidth = totalAwaySize
+        rowHeight = totalCrossSize
+    else
+        rowWidth = totalCrossSize
+        rowHeight = totalAwaySize
+    end
+    row:SetSize(rowWidth, rowHeight)
+
+    for iconIndex, slot in ipairs(slots) do
+        local entry = slot.entry
         local icon = self:AcquireIcon(row)
         local _, texture = SafeGetSpellInfo(entry.spellID)
 
+        icon:SetSize(iconSize, iconSize)
         icon.spellID = entry.spellID
         icon.baseCD = entry.meta.cd
         icon.texture:SetTexture(texture or 134400)
@@ -444,18 +779,25 @@ function PartyOffCD:RenderRow(row, rosterEntry)
             icon.timeText:SetText("")
             icon.cooldown:SetCooldown(0, 0)
         end
-        if iconIndex == 1 then
-            icon:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+
+        local iconX = 0
+        local iconTop = 0
+        if attach == "RIGHT" then
+            iconX = slot.away
+            iconTop = slot.cross
+        elseif attach == "LEFT" then
+            iconX = rowWidth - iconSize - slot.away
+            iconTop = slot.cross
+        elseif attach == "TOP" then
+            iconX = slot.cross
+            iconTop = rowHeight - iconSize - slot.away
         else
-            local spacing = ICON_SPACING
-            if previousEntry and previousEntry.meta.type ~= entry.meta.type then
-                spacing = ICON_SPACING + 8
-            end
-            icon:SetPoint("RIGHT", row.icons[iconIndex - 1], "LEFT", -spacing, 0)
+            iconX = slot.cross
+            iconTop = slot.away
         end
+        icon:SetPoint("TOPLEFT", row, "TOPLEFT", iconX, -iconTop)
 
         row.icons[iconIndex] = icon
-        previousEntry = entry
     end
 end
 
@@ -722,7 +1064,7 @@ function PartyOffCD:GetMissingBuffEntries()
         if classInRoster[definition.class] then
             local spellID = ResolveMissingBuffSpellID(definition)
             if spellID then
-                if not UnitHasBuffFromSpellID("player", spellID) then
+                if not UnitHasBuffFromDefinition("player", definition) then
                     missingEntries[#missingEntries + 1] = {
                         class = definition.class,
                         spellID = spellID,
