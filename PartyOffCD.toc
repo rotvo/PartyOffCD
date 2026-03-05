@@ -2,7 +2,12 @@
 ## Title: PartyOffCD
 ## Notes: Self-reported offensive and defensive cooldown tracker for party play
 ## Author: Metal
-## Version: 0.1.0
+## Version: 0.1.1
 ## SavedVariablesPerCharacter: PartyOffCDDB
 
+Core.lua
 PartyOffCD.lua
+Spells.lua
+Comms.lua
+Tracker.lua
+ConfigUI.lua

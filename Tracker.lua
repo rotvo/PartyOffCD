@@ -1,0 +1,864 @@
+local _, PartyOffCDCore = ...
+PartyOffCDCore = PartyOffCDCore or _G.PartyOffCDCore
+
+local PartyOffCD = _G.PartyOffCD
+assert(PartyOffCD, "PartyOffCD: frame missing before loading Tracker.lua")
+assert(PartyOffCDCore, "PartyOffCD: core missing before loading Tracker.lua")
+
+local MAX_TRACKED_ROWS = PartyOffCDCore.MAX_TRACKED_ROWS
+local ICON_SIZE = PartyOffCDCore.ICON_SIZE
+local ICON_SPACING = PartyOffCDCore.ICON_SPACING
+local INTERRUPT_BAR_WIDTH = PartyOffCDCore.INTERRUPT_BAR_WIDTH
+local INTERRUPT_ROW_HEIGHT = PartyOffCDCore.INTERRUPT_ROW_HEIGHT
+local INTERRUPT_ICON_SIZE = PartyOffCDCore.INTERRUPT_ICON_SIZE
+local FALLBACK_X = PartyOffCDCore.FALLBACK_X
+local FALLBACK_Y = PartyOffCDCore.FALLBACK_Y
+local SPELLS = PartyOffCDCore.SPELLS
+local SPELL_TYPE_PRIORITY = PartyOffCDCore.SPELL_TYPE_PRIORITY
+local DB_DEFAULTS = PartyOffCDCore.DEFAULTS
+local MISSING_BUFF_ICON_SIZE = 36
+local MISSING_BUFF_ICON_SPACING = 8
+local MISSING_BUFFS = {
+    { class = "MAGE", spellIDs = { 1459 } }, -- Arcane Intellect
+    { class = "PRIEST", spellIDs = { 21562 } }, -- Power Word: Fortitude
+    { class = "WARRIOR", spellIDs = { 6673 } }, -- Battle Shout
+    { class = "EVOKER", spellIDs = { 381748 } }, -- Blessing of the Bronze
+    { class = "DRUID", spellIDs = { 1126 } }, -- Mark of the Wild
+    { class = "SHAMAN", spellIDs = { 462854, 204330 } }, -- Skyfury (version fallback)
+}
+
+local SafeGetSpellInfo = PartyOffCDCore.SafeGetSpellInfo
+local GetUnitSpecID = PartyOffCDCore.GetUnitSpecID
+local ResolveSpecValue = PartyOffCDCore.ResolveSpecValue
+local FormatRemaining = PartyOffCDCore.FormatRemaining
+local GetUnitFullName = PartyOffCDCore.GetUnitFullName
+local NormalizeName = PartyOffCDCore.NormalizeName
+local ApplyLightOutline = PartyOffCDCore.ApplyLightOutline
+
+local function ResolveMissingBuffSpellID(definition)
+    if definition.resolvedSpellID ~= nil then
+        return definition.resolvedSpellID or nil
+    end
+
+    for _, spellID in ipairs(definition.spellIDs or {}) do
+        if SafeGetSpellInfo(spellID) then
+            definition.resolvedSpellID = spellID
+            return spellID
+        end
+    end
+
+    definition.resolvedSpellID = false
+    return nil
+end
+
+local function UnitHasBuffFromSpellID(unit, spellID)
+    if not unit or not UnitExists(unit) or not spellID then
+        return false
+    end
+
+    if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellID then
+        local aura = C_UnitAuras.GetAuraDataBySpellID(unit, spellID, "HELPFUL")
+        if aura then
+            return true
+        end
+    end
+
+    if AuraUtil and AuraUtil.FindAuraBySpellID then
+        local aura = AuraUtil.FindAuraBySpellID(spellID, unit, "HELPFUL")
+        if aura then
+            return true
+        end
+    end
+
+    local targetName = SafeGetSpellInfo(spellID)
+    if targetName and AuraUtil and AuraUtil.FindAuraByName then
+        local aura = AuraUtil.FindAuraByName(targetName, unit, "HELPFUL")
+        if aura then
+            return true
+        end
+    end
+
+    if UnitBuff then
+        for index = 1, 40 do
+            local auraName, _, _, _, _, _, _, _, _, auraSpellID = UnitBuff(unit, index)
+            if not auraName then
+                break
+            end
+            if auraSpellID == spellID or (targetName and auraName == targetName) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+function PartyOffCD:BuildRoster()
+    wipe(self.roster)
+    wipe(self.rosterLookup)
+
+    local units = {}
+
+    if IsInRaid() then
+        for index = 1, math.min(GetNumGroupMembers(), MAX_TRACKED_ROWS) do
+            units[#units + 1] = "raid" .. index
+        end
+    elseif IsInGroup() then
+        units[#units + 1] = "player"
+        for index = 1, MAX_TRACKED_ROWS - 1 do
+            units[#units + 1] = "party" .. index
+        end
+    else
+        units[#units + 1] = "player"
+    end
+
+    for _, unit in ipairs(units) do
+        if UnitExists(unit) then
+            local fullName = GetUnitFullName(unit)
+            local shortName = UnitName(unit)
+            local _, classToken = UnitClass(unit)
+            local specID = GetUnitSpecID(unit)
+            local key = NormalizeName(fullName)
+            local shortKey = NormalizeName(shortName)
+
+            if not specID then
+                specID = (key and self.senderSpecIDs[key]) or (shortKey and self.senderSpecIDs[shortKey]) or nil
+            end
+
+            if fullName and shortName then
+                local entry = {
+                    unit = unit,
+                    name = shortName,
+                    fullName = fullName,
+                    class = classToken,
+                    specID = specID,
+                    key = key,
+                    shortKey = shortKey,
+                }
+
+                self.roster[#self.roster + 1] = entry
+
+                if entry.key then
+                    self.rosterLookup[entry.key] = entry
+                end
+
+                if entry.shortKey and not self.rosterLookup[entry.shortKey] then
+                    self.rosterLookup[entry.shortKey] = entry
+                end
+
+                if specID then
+                    if entry.key then
+                        self.senderSpecIDs[entry.key] = specID
+                    end
+                    if entry.shortKey then
+                        self.senderSpecIDs[entry.shortKey] = specID
+                    end
+                end
+            end
+        end
+    end
+
+    local playerFull = GetUnitFullName("player")
+    local playerShort = UnitName("player")
+    local _, playerClass = UnitClass("player")
+    local playerSpecID = GetUnitSpecID("player")
+    local playerFullKey = NormalizeName(playerFull)
+    local playerShortKey = NormalizeName(playerShort)
+    if not playerSpecID then
+        playerSpecID = (playerFullKey and self.senderSpecIDs[playerFullKey]) or (playerShortKey and self.senderSpecIDs[playerShortKey]) or nil
+    end
+    self.playerKeys.full = playerFullKey
+    self.playerKeys.short = playerShortKey
+    self.playerKeys.class = playerClass
+    self.playerKeys.specID = playerSpecID
+    local stamp = GetTime()
+    if self.playerKeys.full then
+        self.addonUsers[self.playerKeys.full] = stamp
+    end
+    if self.playerKeys.short then
+        self.addonUsers[self.playerKeys.short] = stamp
+    end
+    if playerSpecID then
+        if self.playerKeys.full then
+            self.senderSpecIDs[self.playerKeys.full] = playerSpecID
+        end
+        if self.playerKeys.short then
+            self.senderSpecIDs[self.playerKeys.short] = playerSpecID
+        end
+    end
+end
+
+local function GetCompactPartyAnchor(index)
+    local frame = _G["CompactPartyFrameMember" .. index]
+    if frame and frame:IsShown() then
+        return frame
+    end
+
+    local raidFrame = _G["CompactRaidFrame" .. index]
+    if raidFrame and raidFrame:IsShown() then
+        return raidFrame
+    end
+
+    return nil
+end
+
+function PartyOffCD:CreateTrackerFrame()
+    if self.trackerFrame then
+        return
+    end
+
+    local frame = CreateFrame("Frame", "PartyOffCDTrackerFrame", UIParent)
+    frame:SetSize(260, 180)
+    frame:SetPoint("LEFT", UIParent, "LEFT", FALLBACK_X, FALLBACK_Y)
+    frame:Hide()
+
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    title:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 4)
+    title:SetText("")
+
+    self.trackerFrame = frame
+end
+
+function PartyOffCD:AcquireIcon(parent)
+    local icon = tremove(self.iconPool)
+    if icon then
+        icon:SetParent(parent)
+        icon:Show()
+        return icon
+    end
+
+    icon = CreateFrame("Button", nil, parent)
+    icon:SetSize(ICON_SIZE, ICON_SIZE)
+
+    icon.texture = icon:CreateTexture(nil, "ARTWORK")
+    icon.texture:SetAllPoints()
+    icon.texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    icon.cooldown = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
+    icon.cooldown:SetAllPoints()
+    if icon.cooldown.SetDrawSwipe then
+        icon.cooldown:SetDrawSwipe(false)
+    end
+    if icon.cooldown.SetDrawBling then
+        icon.cooldown:SetDrawBling(false)
+    end
+    if icon.cooldown.SetHideCountdownNumbers then
+        icon.cooldown:SetHideCountdownNumbers(true)
+    end
+
+    icon.timeText = icon:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    icon.timeText:SetPoint("BOTTOM", icon, "BOTTOM", 0, 2)
+    icon.timeText:SetShadowOffset(1, -1)
+    ApplyLightOutline(icon.timeText)
+
+    icon.typeText = icon:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    icon.typeText:SetPoint("TOP", icon, "TOP", 0, -2)
+
+    icon:SetScript("OnEnter", function(button)
+        if not button.spellID then
+            return
+        end
+
+        GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+        GameTooltip:SetSpellByID(button.spellID)
+        GameTooltip:AddLine("Base CD: " .. tostring(button.baseCD) .. "s", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+
+    icon:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    return icon
+end
+
+function PartyOffCD:ReleaseRowIcons(row)
+    if not row.icons then
+        return
+    end
+
+    for _, icon in ipairs(row.icons) do
+        icon:Hide()
+        icon:ClearAllPoints()
+        icon:SetParent(UIParent)
+        icon.spellID = nil
+        icon.baseCD = nil
+        icon:SetAlpha(1)
+        if icon.texture.SetDesaturated then
+            icon.texture:SetDesaturated(false)
+        end
+        icon.cooldown:SetCooldown(0, 0)
+        icon.timeText:SetText("")
+        icon.typeText:SetText("")
+        tinsert(self.iconPool, icon)
+    end
+
+    wipe(row.icons)
+end
+
+function PartyOffCD:CreateRow(index)
+    local row = CreateFrame("Frame", nil, self.trackerFrame)
+    row:SetSize(240, 28)
+    row.index = index
+    row.icons = {}
+
+    row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.label:SetPoint("RIGHT", row, "LEFT", -6, 0)
+    row.label:SetJustifyH("RIGHT")
+    row.label:SetWidth(90)
+    row.label:Hide()
+
+    self.rows[index] = row
+    return row
+end
+
+function PartyOffCD:GetRow(index)
+    return self.rows[index] or self:CreateRow(index)
+end
+
+function PartyOffCD:GetSortedCooldowns(senderKey, onlyType)
+    local senderCooldowns = self.cooldowns[senderKey]
+    local now = GetTime()
+    local entries = {}
+    local senderClass = self:GetSenderClass(senderKey)
+    local senderSpecID = self:GetSenderSpecID(senderKey)
+
+    for spellID in pairs(SPELLS) do
+        if self:IsSpellEnabled(spellID) then
+            local meta = self:GetEffectiveMeta(senderKey, spellID)
+            local passesType = meta and ((onlyType and meta.type == onlyType) or (not onlyType and meta.type ~= "INT"))
+            local passesClass = meta and (not senderClass or meta.class == senderClass)
+            local passesSpec = passesType and passesClass and ((not meta.specs) or (not senderSpecID))
+            if passesClass and not passesSpec and meta.specs and senderSpecID then
+                for _, specValue in ipairs(meta.specs) do
+                    local allowedSpecID = ResolveSpecValue(meta.class, specValue)
+                    if allowedSpecID == senderSpecID then
+                        passesSpec = true
+                        break
+                    end
+                end
+            end
+
+            if passesType and passesClass and passesSpec then
+                local cooldownData = senderCooldowns and senderCooldowns[spellID] or nil
+                local endTime = cooldownData and (type(cooldownData) == "table" and cooldownData.endTime or cooldownData) or 0
+                local duration = cooldownData and (type(cooldownData) == "table" and cooldownData.duration or meta.cd) or meta.cd
+                local remaining = endTime - now
+                local isActive = remaining > 0
+
+                if not isActive then
+                    remaining = 0
+                    endTime = 0
+                    duration = meta.cd
+                end
+
+                entries[#entries + 1] = {
+                    spellID = spellID,
+                    endTime = endTime,
+                    remaining = remaining,
+                    meta = meta,
+                    duration = duration,
+                    isActive = isActive,
+                }
+            end
+        end
+    end
+
+    table.sort(entries, function(a, b)
+        if onlyType == "INT" then
+            if a.remaining == b.remaining then
+                return a.spellID < b.spellID
+            end
+            return a.remaining < b.remaining
+        end
+
+        if a.meta.type ~= b.meta.type then
+            return (SPELL_TYPE_PRIORITY[a.meta.type] or 99) < (SPELL_TYPE_PRIORITY[b.meta.type] or 99)
+        end
+        if a.meta.class ~= b.meta.class then
+            return tostring(a.meta.class) < tostring(b.meta.class)
+        end
+        if a.meta.cd ~= b.meta.cd then
+            return a.meta.cd < b.meta.cd
+        end
+        if a.remaining == b.remaining then
+            return a.spellID < b.spellID
+        end
+        return a.remaining < b.remaining
+    end)
+
+    return entries
+end
+
+function PartyOffCD:AnchorRow(row, index)
+    row:ClearAllPoints()
+
+    local target = GetCompactPartyAnchor(index)
+    if target then
+        row:SetParent(target)
+        row:SetPoint("RIGHT", target, "LEFT", -4, 0)
+    else
+        row:SetParent(self.trackerFrame)
+        if index == 1 then
+            row:SetPoint("TOPLEFT", self.trackerFrame, "TOPLEFT", 0, 0)
+        else
+            row:SetPoint("TOPLEFT", self.rows[index - 1], "BOTTOMLEFT", 0, -8)
+        end
+    end
+end
+
+function PartyOffCD:RenderRow(row, rosterEntry)
+    row.label:SetText("")
+    self:ReleaseRowIcons(row)
+
+    local entries = self:GetSortedCooldowns(rosterEntry.key)
+    if not entries or #entries == 0 then
+        row:Hide()
+        return
+    end
+
+    row:Show()
+    self:AnchorRow(row, row.index)
+
+    local previousEntry = nil
+    for iconIndex, entry in ipairs(entries) do
+        local icon = self:AcquireIcon(row)
+        local _, texture = SafeGetSpellInfo(entry.spellID)
+
+        icon.spellID = entry.spellID
+        icon.baseCD = entry.meta.cd
+        icon.texture:SetTexture(texture or 134400)
+        icon.typeText:SetText("")
+        if entry.isActive then
+            icon:SetAlpha(1)
+            if icon.texture.SetDesaturated then
+                icon.texture:SetDesaturated(false)
+            end
+            icon.timeText:SetText(FormatRemaining(entry.remaining))
+            icon.cooldown:SetCooldown(entry.endTime - entry.duration, entry.duration)
+        else
+            icon:SetAlpha(0.55)
+            if icon.texture.SetDesaturated then
+                icon.texture:SetDesaturated(true)
+            end
+            icon.timeText:SetText("")
+            icon.cooldown:SetCooldown(0, 0)
+        end
+        if iconIndex == 1 then
+            icon:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        else
+            local spacing = ICON_SPACING
+            if previousEntry and previousEntry.meta.type ~= entry.meta.type then
+                spacing = ICON_SPACING + 8
+            end
+            icon:SetPoint("RIGHT", row.icons[iconIndex - 1], "LEFT", -spacing, 0)
+        end
+
+        row.icons[iconIndex] = icon
+        previousEntry = entry
+    end
+end
+
+function PartyOffCD:CreateInterruptFrame()
+    if self.interruptFrame then
+        return
+    end
+
+    local frame = CreateFrame("Frame", "PartyOffCDInterruptFrame", UIParent)
+    frame:SetSize(INTERRUPT_BAR_WIDTH, 32)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetClampedToScreen(true)
+    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStop", function(selfFrame)
+        selfFrame:StopMovingOrSizing()
+        local point, _, relativePoint, x, y = selfFrame:GetPoint(1)
+        PartyOffCD.db.interruptPoint = point
+        PartyOffCD.db.interruptRelativePoint = relativePoint
+        PartyOffCD.db.interruptX = x
+        PartyOffCD.db.interruptY = y
+    end)
+
+    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.10, 0.06, 0.18, 0.88)
+
+    local borderTop = frame:CreateTexture(nil, "BORDER")
+    borderTop:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    borderTop:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    borderTop:SetHeight(1)
+    borderTop:SetColorTexture(0.95, 0.82, 0.2, 0.9)
+
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    title:SetPoint("TOP", frame, "TOP", 0, -6)
+    title:SetText("Interrupts")
+    title:SetTextColor(1, 0.85, 0.15)
+
+    local emptyText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    emptyText:SetPoint("TOP", title, "BOTTOM", 0, -8)
+    emptyText:SetText("Drag to move")
+    emptyText:SetTextColor(0.75, 0.75, 0.75)
+    frame.emptyText = emptyText
+
+    local db = self.db or DB_DEFAULTS
+    frame:SetPoint(
+        db.interruptPoint or DB_DEFAULTS.interruptPoint,
+        UIParent,
+        db.interruptRelativePoint or DB_DEFAULTS.interruptRelativePoint,
+        db.interruptX or DB_DEFAULTS.interruptX,
+        db.interruptY or DB_DEFAULTS.interruptY
+    )
+
+    self.interruptFrame = frame
+end
+
+function PartyOffCD:CreateInterruptRow(index)
+    local row = CreateFrame("StatusBar", nil, self.interruptFrame)
+    row:SetSize(INTERRUPT_BAR_WIDTH - 12, INTERRUPT_ROW_HEIGHT)
+    row:SetMinMaxValues(0, 1)
+    row:SetValue(0)
+    row:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    row.index = index
+
+    row.bg = row:CreateTexture(nil, "BACKGROUND")
+    row.bg:SetAllPoints()
+    row.bg:SetColorTexture(0.05, 0.05, 0.05, 0.55)
+
+    row.iconBackdrop = row:CreateTexture(nil, "ARTWORK")
+    row.iconBackdrop:SetSize(INTERRUPT_ICON_SIZE + 2, INTERRUPT_ICON_SIZE + 2)
+    row.iconBackdrop:SetPoint("LEFT", row, "LEFT", 2, 0)
+    row.iconBackdrop:SetColorTexture(0.02, 0.02, 0.02, 0.95)
+
+    row.icon = row:CreateTexture(nil, "OVERLAY")
+    row.icon:SetSize(INTERRUPT_ICON_SIZE, INTERRUPT_ICON_SIZE)
+    row.icon:SetPoint("CENTER", row.iconBackdrop, "CENTER", 0, 0)
+    row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    row.nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.nameText:SetPoint("LEFT", row.iconBackdrop, "RIGHT", 6, 0)
+    row.nameText:SetJustifyH("LEFT")
+    row.nameText:SetWidth(110)
+
+    row.timeText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.timeText:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+    row.timeText:SetJustifyH("RIGHT")
+    ApplyLightOutline(row.timeText)
+
+    self.interruptRows[index] = row
+    return row
+end
+
+function PartyOffCD:GetInterruptRow(index)
+    return self.interruptRows[index] or self:CreateInterruptRow(index)
+end
+
+function PartyOffCD:GetActiveInterruptEntry(senderKey)
+    local entries = self:GetSortedCooldowns(senderKey, "INT")
+    local fallback = nil
+    for _, entry in ipairs(entries) do
+        if not fallback then
+            fallback = entry
+        end
+        if entry.isActive then
+            return entry
+        end
+    end
+
+    return fallback
+end
+
+function PartyOffCD:RenderInterruptRow(row, rosterEntry, entry)
+    local _, texture = SafeGetSpellInfo(entry.spellID)
+    local classColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[rosterEntry.class] or nil
+    local remaining = math.max(0, entry.remaining or 0)
+    local duration = math.max(1, entry.duration or entry.meta.cd or 1)
+
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", self.interruptFrame, "TOPLEFT", 6, -24 - ((row.index - 1) * (INTERRUPT_ROW_HEIGHT + 2)))
+    row:SetMinMaxValues(0, duration)
+    row:SetValue(remaining)
+    row.icon:SetTexture(texture or 134400)
+    row.nameText:SetText(rosterEntry.name or "?")
+    row.timeText:SetText(FormatRemaining(remaining))
+
+    if classColor then
+        row:SetStatusBarColor(classColor.r, classColor.g, classColor.b)
+    else
+        row:SetStatusBarColor(0.6, 0.45, 0.2)
+    end
+
+    row:Show()
+end
+
+function PartyOffCD:RefreshInterruptBar()
+    if not self.interruptFrame then
+        return
+    end
+
+    local activeCount = 0
+    for _, rosterEntry in ipairs(self.roster) do
+        if self:HasAddon(rosterEntry.key) then
+            local entry = self:GetActiveInterruptEntry(rosterEntry.key)
+            if entry then
+                activeCount = activeCount + 1
+                local row = self:GetInterruptRow(activeCount)
+                self:RenderInterruptRow(row, rosterEntry, entry)
+            end
+        end
+    end
+
+    for index = (activeCount + 1), #self.interruptRows do
+        self.interruptRows[index]:Hide()
+    end
+
+    if activeCount == 0 then
+        self.interruptFrame:SetHeight(44)
+        if self.interruptFrame.emptyText then
+            self.interruptFrame.emptyText:Show()
+        end
+        self.interruptFrame:Show()
+        return
+    end
+
+    if self.interruptFrame.emptyText then
+        self.interruptFrame.emptyText:Hide()
+    end
+    self.interruptFrame:SetHeight(28 + (activeCount * (INTERRUPT_ROW_HEIGHT + 2)))
+    self.interruptFrame:Show()
+end
+
+function PartyOffCD:GetMissingBuffEntries()
+    if not IsInGroup() and not IsInRaid() then
+        return {}
+    end
+
+    local classInRoster = {}
+    for _, rosterEntry in ipairs(self.roster) do
+        if rosterEntry.class then
+            classInRoster[rosterEntry.class] = true
+        end
+    end
+
+    local missingEntries = {}
+    for _, definition in ipairs(MISSING_BUFFS) do
+        if classInRoster[definition.class] then
+            local spellID = ResolveMissingBuffSpellID(definition)
+            if spellID then
+                if not UnitHasBuffFromSpellID("player", spellID) then
+                    missingEntries[#missingEntries + 1] = {
+                        class = definition.class,
+                        spellID = spellID,
+                    }
+                end
+            end
+        end
+    end
+
+    return missingEntries
+end
+
+function PartyOffCD:CreateMissingBuffFrame()
+    if self.missingBuffFrame then
+        return
+    end
+
+    local frame = CreateFrame("Frame", "PartyOffCDMissingBuffFrame", UIParent)
+    frame:SetSize(140, 64)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetClampedToScreen(true)
+    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStop", function(selfFrame)
+        selfFrame:StopMovingOrSizing()
+        local point, _, relativePoint, x, y = selfFrame:GetPoint(1)
+        PartyOffCD.db.missingBuffPoint = point
+        PartyOffCD.db.missingBuffRelativePoint = relativePoint
+        PartyOffCD.db.missingBuffX = x
+        PartyOffCD.db.missingBuffY = y
+    end)
+
+    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.08, 0.08, 0.10, 0.90)
+
+    local borderTop = frame:CreateTexture(nil, "BORDER")
+    borderTop:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    borderTop:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    borderTop:SetHeight(1)
+    borderTop:SetColorTexture(0.95, 0.82, 0.2, 0.9)
+
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    title:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -6)
+    title:SetText("Missing Buffs")
+    title:SetTextColor(1, 0.85, 0.15)
+
+    local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
+    closeButton:SetScript("OnClick", function()
+        PartyOffCD.db.missingBuffsHidden = true
+        frame:Hide()
+    end)
+
+    local content = CreateFrame("Frame", nil, frame)
+    content:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -22)
+    content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -8, 8)
+    frame.content = content
+
+    local db = self.db or DB_DEFAULTS
+    frame:SetPoint(
+        db.missingBuffPoint or DB_DEFAULTS.missingBuffPoint,
+        UIParent,
+        db.missingBuffRelativePoint or DB_DEFAULTS.missingBuffRelativePoint,
+        db.missingBuffX or DB_DEFAULTS.missingBuffX,
+        db.missingBuffY or DB_DEFAULTS.missingBuffY
+    )
+
+    self.missingBuffFrame = frame
+end
+
+function PartyOffCD:AcquireMissingBuffIcon(parent)
+    local iconFrame = tremove(self.missingBuffIconPool)
+    if iconFrame then
+        iconFrame:SetParent(parent)
+        iconFrame:Show()
+        return iconFrame
+    end
+
+    iconFrame = CreateFrame("Button", nil, parent)
+    iconFrame:SetSize(MISSING_BUFF_ICON_SIZE, MISSING_BUFF_ICON_SIZE + 16)
+
+    local iconBg = iconFrame:CreateTexture(nil, "BACKGROUND")
+    iconBg:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", 0, 0)
+    iconBg:SetSize(MISSING_BUFF_ICON_SIZE, MISSING_BUFF_ICON_SIZE)
+    iconBg:SetColorTexture(0.04, 0.04, 0.04, 0.95)
+    iconFrame.iconBg = iconBg
+
+    local texture = iconFrame:CreateTexture(nil, "ARTWORK")
+    texture:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", 2, -2)
+    texture:SetSize(MISSING_BUFF_ICON_SIZE - 4, MISSING_BUFF_ICON_SIZE - 4)
+    texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    iconFrame.texture = texture
+
+    local missingText = iconFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    missingText:SetPoint("TOP", texture, "BOTTOM", 0, -1)
+    missingText:SetText("MISSING")
+    iconFrame.missingText = missingText
+
+    iconFrame:SetScript("OnEnter", function(button)
+        if not button.spellID then
+            return
+        end
+        GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+        GameTooltip:SetSpellByID(button.spellID)
+        GameTooltip:AddLine("Missing in group", 1, 0.25, 0.25)
+        GameTooltip:Show()
+    end)
+
+    iconFrame:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    return iconFrame
+end
+
+function PartyOffCD:ReleaseMissingBuffIcons()
+    for _, iconFrame in ipairs(self.missingBuffIcons) do
+        iconFrame:Hide()
+        iconFrame:ClearAllPoints()
+        iconFrame:SetParent(UIParent)
+        iconFrame.spellID = nil
+        iconFrame.texture:SetTexture(nil)
+        tinsert(self.missingBuffIconPool, iconFrame)
+    end
+
+    wipe(self.missingBuffIcons)
+end
+
+function PartyOffCD:RefreshMissingBuffFrame()
+    if not self.missingBuffFrame then
+        return
+    end
+
+    self:ReleaseMissingBuffIcons()
+
+    if not self.db or self.db.missingBuffsHidden then
+        self.missingBuffFrame:Hide()
+        return
+    end
+
+    local missingEntries = self:GetMissingBuffEntries()
+    if #missingEntries == 0 then
+        self.missingBuffFrame:Hide()
+        return
+    end
+
+    for index, entry in ipairs(missingEntries) do
+        local iconFrame = self:AcquireMissingBuffIcon(self.missingBuffFrame.content)
+        local _, texture = SafeGetSpellInfo(entry.spellID)
+        iconFrame.spellID = entry.spellID
+        iconFrame.texture:SetTexture(texture or 134400)
+
+        if index == 1 then
+            iconFrame:SetPoint("TOPLEFT", self.missingBuffFrame.content, "TOPLEFT", 0, 0)
+        else
+            iconFrame:SetPoint("LEFT", self.missingBuffIcons[index - 1], "RIGHT", MISSING_BUFF_ICON_SPACING, 0)
+        end
+
+        self.missingBuffIcons[index] = iconFrame
+    end
+
+    local width = 16 + (#missingEntries * MISSING_BUFF_ICON_SIZE) + ((#missingEntries - 1) * MISSING_BUFF_ICON_SPACING)
+    self.missingBuffFrame:SetWidth(math.max(120, width))
+    self.missingBuffFrame:SetHeight(64)
+    self.missingBuffFrame:Show()
+end
+
+function PartyOffCD:RefreshTracker()
+    self:PruneState()
+
+    self:BuildRoster()
+
+    if #self.roster == 0 then
+        if self.trackerFrame then
+            self.trackerFrame:Hide()
+        end
+        if self.interruptFrame then
+            self.interruptFrame:Hide()
+        end
+        if self.missingBuffFrame then
+            self.missingBuffFrame:Hide()
+        end
+        for _, row in ipairs(self.interruptRows) do
+            row:Hide()
+        end
+        self:ReleaseMissingBuffIcons()
+        return
+    end
+
+    self:CreateTrackerFrame()
+    self:CreateInterruptFrame()
+    self:CreateMissingBuffFrame()
+    self.trackerFrame:Show()
+
+    for index, entry in ipairs(self.roster) do
+        local row = self:GetRow(index)
+        if self:HasAddon(entry.key) then
+            self:RenderRow(row, entry)
+        else
+            self:ReleaseRowIcons(row)
+            row:Hide()
+        end
+    end
+
+    for index = (#self.roster + 1), #self.rows do
+        local row = self.rows[index]
+        self:ReleaseRowIcons(row)
+        row:Hide()
+    end
+
+    self:RefreshInterruptBar()
+    self:RefreshMissingBuffFrame()
+end
+
