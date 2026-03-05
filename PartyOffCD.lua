@@ -83,7 +83,8 @@ local function SafeGetSpellCooldown(spellID)
     if C_Spell and C_Spell.GetSpellCooldown then
         local info = C_Spell.GetSpellCooldown(spellID)
         if info then
-            return info.startTime or 0, info.duration or 0, info.isEnabled ~= false
+            -- Avoid comparing secure booleans from C_Spell cooldown info in combat.
+            return info.startTime or 0, info.duration or 0, true
         end
     end
 
