@@ -539,6 +539,15 @@ function PartyOffCD:ResolveSenderKey(sender)
         return rosterEntry.key
     end
 
+    -- Fallback for cross-realm sender formats (Name-Realm) when roster stores short names.
+    local shortKey = key:match("^([^%-]+)")
+    if shortKey and shortKey ~= key then
+        local shortEntry = self.rosterLookup[shortKey]
+        if shortEntry then
+            return shortEntry.key
+        end
+    end
+
     return key
 end
 
@@ -1270,16 +1279,16 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
         return
     end
 
-    local action, spellID, valueA, valueB, valueC, valueD = self:DecodeMessage(message)
-    if not action then
-        return
-    end
-
     local senderKey = self:ResolveSenderKey(sender)
     if not senderKey then
         return
     end
     self:MarkAddonUser(senderKey)
+
+    local action, spellID, valueA, valueB, valueC, valueD = self:DecodeMessage(message)
+    if not action then
+        return
+    end
 
     if action == "H" then
         local senderSpecID = valueA
@@ -1492,7 +1501,7 @@ function PartyOffCD:CreateTrackerFrame()
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     title:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 4)
-    title:SetText("PartyOffCD")
+    title:SetText("")
 
     self.trackerFrame = frame
 end
