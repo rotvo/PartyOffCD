@@ -349,6 +349,103 @@ function PartyOffCD:GetDisplayMeta(spellID)
     return self:GetEffectiveMeta(playerKey, spellID) or SPELLS[spellID]
 end
 
+local function CreateStoredSpellMeta(spellID, meta)
+    if not meta then
+        return nil
+    end
+
+    return {
+        cd = tonumber(meta.cd) or meta.cd,
+        type = meta.type,
+        class = meta.class,
+        custom = not BASE_SPELLS[spellID],
+        specs = meta.specs or (BASE_SPELLS[spellID] and BASE_SPELLS[spellID].specs) or nil,
+    }
+end
+
+function PartyOffCD:ClearTrackedSpellState(senderKey, spellID)
+    senderKey = self:ResolveSenderKey(senderKey)
+    if not senderKey or not spellID then
+        return
+    end
+
+    local senderCooldowns = self.cooldowns[senderKey]
+    if senderCooldowns then
+        senderCooldowns[spellID] = nil
+        if not next(senderCooldowns) then
+            self.cooldowns[senderKey] = nil
+        end
+    end
+
+    local senderDuplicates = self.duplicateCache[senderKey]
+    if senderDuplicates then
+        senderDuplicates[spellID] = nil
+        if not next(senderDuplicates) then
+            self.duplicateCache[senderKey] = nil
+        end
+    end
+
+    if self:IsSelfSender(senderKey) then
+        self.lastLocalReport[spellID] = nil
+    end
+end
+
+function PartyOffCD:RefreshGlobalCustomSpell(spellID)
+    spellID = tonumber(spellID)
+    if not spellID or BASE_SPELLS[spellID] then
+        return
+    end
+
+    local replacement
+    for _, bucket in pairs(self.db.syncedOverrides or {}) do
+        local meta = type(bucket) == "table" and bucket[spellID] or nil
+        if meta and meta.cd and meta.type and meta.class then
+            replacement = meta
+            break
+        end
+    end
+
+    if replacement then
+        SPELLS[spellID] = CreateStoredSpellMeta(spellID, replacement)
+        if self.db.spellEnabled[spellID] == nil then
+            self.db.spellEnabled[spellID] = true
+        end
+    else
+        SPELLS[spellID] = nil
+        self.db.spellEnabled[spellID] = nil
+    end
+end
+
+function PartyOffCD:DeleteSenderOverride(senderKey, spellID)
+    senderKey = self:ResolveSenderKey(senderKey)
+    spellID = tonumber(spellID)
+    if not senderKey or not spellID then
+        return false
+    end
+
+    local bucket = self:GetOverrideBucket(senderKey, false)
+    if not bucket or not bucket[spellID] then
+        return false
+    end
+
+    local isBaseSpell = BASE_SPELLS[spellID] ~= nil
+    bucket[spellID] = nil
+    if not next(bucket) then
+        self.db.syncedOverrides[senderKey] = nil
+    end
+
+    if senderKey == self:GetPlayerCanonical() and self.db.customSpells then
+        self.db.customSpells[spellID] = nil
+    end
+
+    if not isBaseSpell then
+        self:ClearTrackedSpellState(senderKey, spellID)
+    end
+
+    self:RefreshGlobalCustomSpell(spellID)
+    return true
+end
+
 
 function PartyOffCD:SetClassEnabled(classToken, isEnabled)
     self.db.classEnabled[classToken] = isEnabled and true or false
@@ -454,6 +551,49 @@ function PartyOffCD:AddCustomSpell(classToken, spellID, cooldown, spellType)
     return true
 end
 
+function PartyOffCD:DeleteCustomSpell(spellID, skipSync)
+    spellID = tonumber(spellID)
+    if not spellID or spellID <= 0 then
+        DebugPrint("Invalid SpellID.")
+        return false
+    end
+
+    if BASE_SPELLS[spellID] then
+        DebugPrint("Base spells cannot be deleted; disable them instead.")
+        return false
+    end
+
+    if not self.db.customSpells or not self.db.customSpells[spellID] then
+        DebugPrint("That custom spell is not owned by this character.")
+        return false
+    end
+
+    local playerKey = self:GetPlayerCanonical()
+    if not playerKey then
+        DebugPrint("Could not identify your character to delete the custom spell.")
+        return false
+    end
+
+    local spellName = SafeGetSpellInfo(spellID) or ("Spell " .. tostring(spellID))
+    if not self:DeleteSenderOverride(playerKey, spellID) then
+        DebugPrint("That custom spell could not be removed.")
+        return false
+    end
+
+    local synced = false
+    if not skipSync and self.SendDeleteMessage then
+        synced = self:SendDeleteMessage(spellID)
+    end
+
+    self:RefreshConfigPanel()
+    self:RefreshTracker()
+    DebugPrint(string.format("Custom spell deleted: %s (%d)", spellName, spellID))
+    if synced then
+        DebugPrint("Delete synced with the group.")
+    end
+    return true
+end
+
 
 function PartyOffCD:GetSpellMeta(spellID)
     return SPELLS[spellID]
@@ -517,13 +657,7 @@ function PartyOffCD:InitializeDB()
         for spellID, meta in pairs(self.db.customSpells) do
             spellID = tonumber(spellID)
             if spellID and meta and meta.cd and meta.type and meta.class and not bucket[spellID] then
-                bucket[spellID] = {
-                    cd = tonumber(meta.cd) or meta.cd,
-                    type = meta.type,
-                    class = meta.class,
-                    custom = not BASE_SPELLS[spellID],
-                    specs = meta.specs or (BASE_SPELLS[spellID] and BASE_SPELLS[spellID].specs) or nil,
-                }
+                bucket[spellID] = CreateStoredSpellMeta(spellID, meta)
             end
         end
     end
@@ -534,13 +668,7 @@ function PartyOffCD:InitializeDB()
                 spellID = tonumber(spellID)
                 if spellID and meta and meta.cd and meta.type and meta.class then
                     if not SPELLS[spellID] then
-                        SPELLS[spellID] = {
-                            cd = tonumber(meta.cd) or meta.cd,
-                            type = meta.type,
-                            class = meta.class,
-                            custom = true,
-                            specs = meta.specs,
-                        }
+                        SPELLS[spellID] = CreateStoredSpellMeta(spellID, meta)
                     end
 
                     if self.db.spellEnabled[spellID] == nil then

@@ -7,10 +7,10 @@ assert(PartyOffCDCore, "PartyOffCD: core missing before loading ConfigUI.lua")
 
 local CLASS_ORDER = PartyOffCDCore.CLASS_ORDER
 local SPELLS = PartyOffCDCore.SPELLS
+local BASE_SPELLS = PartyOffCDCore.BASE_SPELLS
 local DB_DEFAULTS = PartyOffCDCore.DEFAULTS
 local PREFIX = PartyOffCDCore.PREFIX
 local MINIMAP_RADIUS = PartyOffCDCore.MINIMAP_RADIUS
-local MAX_TRACKER_COLUMNS = PartyOffCDCore.MAX_TRACKER_COLUMNS or 8
 local MIN_TRACKER_ICON_SCALE = PartyOffCDCore.MIN_TRACKER_ICON_SCALE or 10
 local MAX_TRACKER_ICON_SCALE = PartyOffCDCore.MAX_TRACKER_ICON_SCALE or 100
 local TRACKER_ATTACH_CYCLE = { "LEFT", "RIGHT", "TOP", "BOTTOM" }
@@ -41,7 +41,7 @@ function PartyOffCD:CreateConfigPanel()
     end
 
     local frame = CreateFrame("Frame", "PartyOffCDConfigPanel", UIParent)
-    frame:SetSize(420, 470)
+    frame:SetSize(500, 470)
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
@@ -106,7 +106,7 @@ function PartyOffCD:CreateConfigPanel()
     scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -32, 12)
 
     local content = CreateFrame("Frame", nil, scrollFrame)
-    content:SetSize(360, 1)
+    content:SetSize(440, 1)
     scrollFrame:SetScrollChild(content)
 
     frame.scrollFrame = scrollFrame
@@ -223,7 +223,7 @@ function PartyOffCD:RefreshConfigPanel()
     end
 
     if frame.instructions then
-        frame.instructions:SetText("Use + to add a spell to that class. Edit/Save changes your personal CD and syncs it automatically.")
+        frame.instructions:SetText("Use + to add spells. Layout is automatic by attach side. Delete removes only your custom spells; base spells can only be disabled.")
     end
 
     local layoutHeader = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -244,43 +244,15 @@ function PartyOffCD:RefreshConfigPanel()
     end)
     self.configRows[#self.configRows + 1] = attachButton
 
-    local columnsLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    columnsLabel:SetPoint("LEFT", attachButton, "RIGHT", 12, 0)
-    columnsLabel:SetText("Columns")
-    self.configRows[#self.configRows + 1] = columnsLabel
-
-    local columnsMinus = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-    columnsMinus:SetSize(20, 20)
-    columnsMinus:SetPoint("LEFT", columnsLabel, "RIGHT", 6, 0)
-    columnsMinus:SetText("-")
-    columnsMinus:SetScript("OnClick", function()
-        PartyOffCD:SetTrackerColumns(PartyOffCD:GetTrackerColumns() - 1)
-        PartyOffCD:RefreshConfigPanel()
-        PartyOffCD:RefreshTracker()
-    end)
-    self.configRows[#self.configRows + 1] = columnsMinus
-
-    local columnsValue = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    columnsValue:SetPoint("LEFT", columnsMinus, "RIGHT", 7, 0)
-    columnsValue:SetText(tostring(self:GetTrackerColumns()))
-    self.configRows[#self.configRows + 1] = columnsValue
-
-    local columnsPlus = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-    columnsPlus:SetSize(20, 20)
-    columnsPlus:SetPoint("LEFT", columnsValue, "RIGHT", 7, 0)
-    columnsPlus:SetText("+")
-    columnsPlus:SetScript("OnClick", function()
-        PartyOffCD:SetTrackerColumns(PartyOffCD:GetTrackerColumns() + 1)
-        PartyOffCD:RefreshConfigPanel()
-        PartyOffCD:RefreshTracker()
-    end)
-    self.configRows[#self.configRows + 1] = columnsPlus
-
-    local currentColumns = self:GetTrackerColumns()
     local currentAttach = self:GetTrackerAttach()
-    local currentLimit = (self.GetTrackerColumnLimit and self:GetTrackerColumnLimit(currentAttach)) or MAX_TRACKER_COLUMNS
-    columnsMinus:SetEnabled(currentColumns > 1)
-    columnsPlus:SetEnabled(currentColumns < currentLimit)
+    local layoutHint = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    layoutHint:SetPoint("LEFT", attachButton, "RIGHT", 12, 0)
+    if currentAttach == "LEFT" or currentAttach == "RIGHT" then
+        layoutHint:SetText("Auto layout: single row")
+    else
+        layoutHint:SetText("Auto layout: wraps to unit frame width")
+    end
+    self.configRows[#self.configRows + 1] = layoutHint
     y = y - 28
 
     local sizeLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -551,9 +523,10 @@ function PartyOffCD:RefreshConfigPanel()
         local label = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         label:SetPoint("LEFT", icon, "RIGHT", 6, 0)
         local playerOverride = self:GetPlayerOverride(spellID, self:GetPlayerCanonical())
+        local canDeleteCustom = not BASE_SPELLS[spellID] and self.db.customSpells and self.db.customSpells[spellID]
         local customSuffix = meta.custom and ", custom" or ""
         local overrideSuffix = playerOverride and ", override" or ""
-        label:SetWidth(122)
+        label:SetWidth(132)
         label:SetJustifyH("LEFT")
         label:SetText(string.format("%s (%ss, id %d%s%s)", spellName or ("Spell " .. spellID), meta.cd, spellID, customSuffix, overrideSuffix))
         if self.db.classEnabled[selectedClassToken] == false then
@@ -565,28 +538,43 @@ function PartyOffCD:RefreshConfigPanel()
 
         local editButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
         editButton:SetSize(36, 18)
-        editButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 160, rightY + 1)
+        editButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 178, rightY + 1)
         editButton:SetText("Edit")
         self.configRows[#self.configRows + 1] = editButton
 
         local editBox = CreateNumericEditBox(nil, content, 30, 5)
-        editBox:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 160, rightY)
+        editBox:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 178, rightY)
         editBox:SetText(tostring(meta.cd))
         editBox:Hide()
         self.configRows[#self.configRows + 1] = editBox
 
         local saveButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-        saveButton:SetSize(34, 18)
-        saveButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 194, rightY + 1)
+        saveButton:SetSize(36, 18)
+        saveButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 216, rightY + 1)
         saveButton:SetText("Save")
         saveButton:Hide()
         self.configRows[#self.configRows + 1] = saveButton
+
+        local deleteButton
+        if canDeleteCustom then
+            deleteButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+            deleteButton:SetSize(50, 18)
+            deleteButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 256, rightY + 1)
+            deleteButton:SetText("Delete")
+            deleteButton:SetScript("OnClick", function()
+                PartyOffCD:DeleteCustomSpell(spellID)
+            end)
+            self.configRows[#self.configRows + 1] = deleteButton
+        end
 
         editButton:SetScript("OnClick", function()
             editBox:SetText(tostring((PartyOffCD:GetDisplayMeta(spellID) or meta).cd))
             editButton:Hide()
             editBox:Show()
             saveButton:Show()
+            if deleteButton then
+                deleteButton:Hide()
+            end
         end)
 
         saveButton:SetScript("OnClick", function()
@@ -600,6 +588,9 @@ function PartyOffCD:RefreshConfigPanel()
                 editBox:Hide()
                 saveButton:Hide()
                 editButton:Show()
+                if deleteButton then
+                    deleteButton:Show()
+                end
             end
         end)
 

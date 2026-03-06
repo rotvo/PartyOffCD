@@ -23,6 +23,7 @@ local DB_DEFAULTS = PartyOffCDCore.DEFAULTS
 local TRACKER_TYPE_GAP = ICON_SPACING + 8
 local MISSING_BUFF_ICON_SIZE = 36
 local MISSING_BUFF_ICON_SPACING = 8
+local MAX_AURA_SCAN = 255
 local MISSING_BUFFS = {
     { class = "MAGE", spellIDs = { 1459 } }, -- Arcane Intellect
     { class = "PRIEST", spellIDs = { 21562 } }, -- Power Word: Fortitude
@@ -62,6 +63,14 @@ local function GetCrossAxisSize(iconSize, crossSlots)
     end
     local spacing = GetSpacingForIconSize(iconSize)
     return (crossSlots * iconSize) + (math.max(0, crossSlots - 1) * spacing)
+end
+
+local function GetSpanSize(slotCount, itemSize, gap)
+    if slotCount <= 0 then
+        return 0
+    end
+
+    return (slotCount * itemSize) + (math.max(0, slotCount - 1) * gap)
 end
 
 local function GetMaxIconSizeForCrossSlots(maxCrossSize, crossSlots)
@@ -118,6 +127,62 @@ local function ToSafeNumber(value)
     return nil
 end
 
+local function AuraDataMatches(auraData, targetSpellID, targetSpellName)
+    if not auraData then
+        return false
+    end
+
+    local auraSpellID = ToSafeNumber(auraData.spellId or auraData.spellID)
+    if targetSpellID and auraSpellID and auraSpellID == targetSpellID then
+        return true
+    end
+
+    local auraName = auraData.name
+    if targetSpellName and auraName and auraName == targetSpellName then
+        return true
+    end
+
+    return false
+end
+
+local function UnitHasBuffFromAuraDataIndex(unit, targetSpellID, targetSpellName)
+    if not C_UnitAuras then
+        return false
+    end
+
+    if C_UnitAuras.GetBuffDataByIndex then
+        for index = 1, MAX_AURA_SCAN do
+            local ok, auraData = pcall(C_UnitAuras.GetBuffDataByIndex, unit, index)
+            if not ok then
+                break
+            end
+            if not auraData then
+                break
+            end
+            if AuraDataMatches(auraData, targetSpellID, targetSpellName) then
+                return true
+            end
+        end
+    end
+
+    if C_UnitAuras.GetAuraDataByIndex then
+        for index = 1, MAX_AURA_SCAN do
+            local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, unit, index, "HELPFUL")
+            if not ok then
+                break
+            end
+            if not auraData then
+                break
+            end
+            if AuraDataMatches(auraData, targetSpellID, targetSpellName) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
 local function UnitHasBuffFromSpellID(unit, spellID)
     local targetSpellID = ToSafeNumber(spellID)
     if not unit or not UnitExists(unit) or not targetSpellID then
@@ -138,8 +203,12 @@ local function UnitHasBuffFromSpellID(unit, spellID)
         end
     end
 
+    if UnitHasBuffFromAuraDataIndex(unit, targetSpellID, nil) then
+        return true
+    end
+
     if UnitAura then
-        for index = 1, 80 do
+        for index = 1, MAX_AURA_SCAN do
             local auraName, _, _, _, _, _, _, _, _, auraSpellID = UnitAura(unit, index, "HELPFUL")
             if not auraName then
                 break
@@ -152,7 +221,7 @@ local function UnitHasBuffFromSpellID(unit, spellID)
     end
 
     if UnitBuff then
-        for index = 1, 80 do
+        for index = 1, MAX_AURA_SCAN do
             local auraName, _, _, _, _, _, _, _, _, auraSpellID = UnitBuff(unit, index)
             if not auraName then
                 break
@@ -185,6 +254,47 @@ local function UnitHasBuffFromDefinition(unit, definition)
                 local ok, aura = pcall(AuraUtil.FindAuraByName, candidateName, unit, "HELPFUL")
                 if ok and aura then
                     return true
+                end
+            end
+        end
+    end
+
+    for _, candidateSpellID in ipairs(definition.spellIDs or {}) do
+        local candidateName = SafeGetSpellInfo(candidateSpellID)
+        if candidateName and UnitHasBuffFromAuraDataIndex(unit, nil, candidateName) then
+            return true
+        end
+    end
+
+    if UnitAura then
+        for _, candidateSpellID in ipairs(definition.spellIDs or {}) do
+            local candidateName = SafeGetSpellInfo(candidateSpellID)
+            if candidateName then
+                for index = 1, MAX_AURA_SCAN do
+                    local auraName = UnitAura(unit, index, "HELPFUL")
+                    if not auraName then
+                        break
+                    end
+                    if auraName == candidateName then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+
+    if UnitBuff then
+        for _, candidateSpellID in ipairs(definition.spellIDs or {}) do
+            local candidateName = SafeGetSpellInfo(candidateSpellID)
+            if candidateName then
+                for index = 1, MAX_AURA_SCAN do
+                    local auraName = UnitBuff(unit, index)
+                    if not auraName then
+                        break
+                    end
+                    if auraName == candidateName then
+                        return true
+                    end
                 end
             end
         end
@@ -428,6 +538,30 @@ function PartyOffCD:GetTrackerIconMetrics(row, attach, crossSlots)
     return iconSize, iconSpacing
 end
 
+function PartyOffCD:GetTrackerGroupColumns(row, attach, groupCount, iconSize, iconSpacing)
+    if not groupCount or groupCount <= 1 then
+        return math.max(1, groupCount or 1)
+    end
+
+    if attach == "LEFT" or attach == "RIGHT" then
+        return groupCount
+    end
+
+    local target = row and row:GetParent()
+    if target and target ~= self.trackerFrame and target.GetWidth then
+        local availableWidth = target:GetWidth() or 0
+        if availableWidth > 0 then
+            local columns = math.floor((availableWidth + iconSpacing) / (iconSize + iconSpacing))
+            if columns < 1 then
+                columns = 1
+            end
+            return math.min(groupCount, columns)
+        end
+    end
+
+    return math.min(MAX_VERTICAL_TRACKER_COLUMNS, groupCount)
+end
+
 function PartyOffCD:CreateTrackerFrame()
     if self.trackerFrame then
         return
@@ -660,8 +794,8 @@ function PartyOffCD:RenderRow(row, rosterEntry)
     self:AnchorRow(row, row.index)
 
     local attach = row.layoutAttach or self:GetTrackerAttach()
-    local columns = self:GetTrackerColumns()
     local horizontalAttach = attach == "LEFT" or attach == "RIGHT"
+    local iconSize, iconSpacing = self:GetTrackerIconMetrics(row, attach, horizontalAttach and 1 or nil)
 
     local groupedEntries = {}
     local currentGroup = nil
@@ -677,34 +811,20 @@ function PartyOffCD:RenderRow(row, rosterEntry)
         currentGroup.entries[#currentGroup.entries + 1] = entry
     end
 
-    local maxCrossSlots = 1
-    for _, group in ipairs(groupedEntries) do
-        local groupCount = #group.entries
-        local crossSlots = 1
-        if horizontalAttach then
-            crossSlots = math.ceil(groupCount / columns)
-        else
-            crossSlots = math.min(columns, groupCount)
-        end
-        if crossSlots > maxCrossSlots then
-            maxCrossSlots = crossSlots
-        end
-    end
-
-    local iconSize, iconSpacing = self:GetTrackerIconMetrics(row, attach, maxCrossSlots)
     local slots = {}
     local awayOffset = 0
     local maxCrossSize = iconSize
     for groupIndex, group in ipairs(groupedEntries) do
         local groupCount = #group.entries
+        local columns = self:GetTrackerGroupColumns(row, attach, groupCount, iconSize, iconSpacing)
         local sectionAwaySize
         local sectionCrossSize
 
         if horizontalAttach then
             local awaySlots = math.min(columns, groupCount)
             local crossSlots = math.ceil(groupCount / columns)
-            sectionAwaySize = (awaySlots * iconSize) + (math.max(0, awaySlots - 1) * iconSpacing)
-            sectionCrossSize = (crossSlots * iconSize) + (math.max(0, crossSlots - 1) * iconSpacing)
+            sectionAwaySize = GetSpanSize(awaySlots, iconSize, iconSpacing)
+            sectionCrossSize = GetSpanSize(crossSlots, iconSize, iconSpacing)
 
             for entryIndex, entry in ipairs(group.entries) do
                 local awayIndex = (entryIndex - 1) % columns
@@ -718,8 +838,8 @@ function PartyOffCD:RenderRow(row, rosterEntry)
         else
             local crossSlots = math.min(columns, groupCount)
             local awaySlots = math.ceil(groupCount / columns)
-            sectionCrossSize = (crossSlots * iconSize) + (math.max(0, crossSlots - 1) * iconSpacing)
-            sectionAwaySize = (awaySlots * iconSize) + (math.max(0, awaySlots - 1) * iconSpacing)
+            sectionCrossSize = GetSpanSize(crossSlots, iconSize, iconSpacing)
+            sectionAwaySize = GetSpanSize(awaySlots, iconSize, iconSpacing)
 
             for entryIndex, entry in ipairs(group.entries) do
                 local crossIndex = (entryIndex - 1) % columns

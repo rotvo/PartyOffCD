@@ -54,6 +54,15 @@ function PartyOffCD:EncodeSyncMessage(spellID, cooldown, spellType, classToken, 
     }, ";")
 end
 
+function PartyOffCD:EncodeDeleteMessage(spellID, specID)
+    return table.concat({
+        MESSAGE_VERSION,
+        "D",
+        tostring(spellID),
+        tostring(specID or 0),
+    }, ";")
+end
+
 function PartyOffCD:EncodeTimerAdjustMessage(spellID, remaining, specID)
     return table.concat({
         MESSAGE_VERSION,
@@ -104,6 +113,16 @@ function PartyOffCD:DecodeMessage(message)
         end
 
         return action, spellID, cooldown, spellType, classToken, senderSpecID
+    end
+
+    if action == "D" then
+        local spellID = tonumber(a)
+        local senderSpecID = tonumber(b)
+        if not spellID then
+            return nil
+        end
+
+        return action, spellID, senderSpecID
     end
 
     if action == "R" then
@@ -270,6 +289,17 @@ function PartyOffCD:SendTimerAdjustMessage(spellID, remaining)
     return true
 end
 
+function PartyOffCD:SendDeleteMessage(spellID)
+    local channel = self:GetTargetChannel()
+    if not channel then
+        return false
+    end
+
+    local message = self:EncodeDeleteMessage(spellID, self:GetCurrentPlayerSpecID())
+    C_ChatInfo.SendAddonMessage(PREFIX, message, channel)
+    return true
+end
+
 function PartyOffCD:SendHelloMessage()
     local channel = self:GetTargetChannel()
     if not channel then
@@ -430,6 +460,16 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
         end
 
         if not sameOverride or addedGlobalSpell then
+            self:RefreshConfigPanel()
+            self:RefreshTracker()
+        end
+        return
+    end
+
+    if action == "D" then
+        local senderSpecID = valueA
+        self:UpdateSenderSpecID(senderKey, senderSpecID)
+        if self:DeleteSenderOverride(senderKey, spellID) then
             self:RefreshConfigPanel()
             self:RefreshTracker()
         end
