@@ -127,7 +127,7 @@ local function ToSafeNumber(value)
     return nil
 end
 
-local function AuraDataMatches(auraData, targetSpellID, targetSpellName)
+local function AuraDataMatches(auraData, targetSpellID)
     if not auraData then
         return false
     end
@@ -137,15 +137,10 @@ local function AuraDataMatches(auraData, targetSpellID, targetSpellName)
         return true
     end
 
-    local auraName = auraData.name
-    if targetSpellName and auraName and auraName == targetSpellName then
-        return true
-    end
-
     return false
 end
 
-local function UnitHasBuffFromAuraDataIndex(unit, targetSpellID, targetSpellName)
+local function UnitHasBuffFromAuraDataIndex(unit, targetSpellID)
     if not C_UnitAuras then
         return false
     end
@@ -159,7 +154,7 @@ local function UnitHasBuffFromAuraDataIndex(unit, targetSpellID, targetSpellName
             if not auraData then
                 break
             end
-            if AuraDataMatches(auraData, targetSpellID, targetSpellName) then
+            if AuraDataMatches(auraData, targetSpellID) then
                 return true
             end
         end
@@ -174,7 +169,7 @@ local function UnitHasBuffFromAuraDataIndex(unit, targetSpellID, targetSpellName
             if not auraData then
                 break
             end
-            if AuraDataMatches(auraData, targetSpellID, targetSpellName) then
+            if AuraDataMatches(auraData, targetSpellID) then
                 return true
             end
         end
@@ -203,7 +198,7 @@ local function UnitHasBuffFromSpellID(unit, spellID)
         end
     end
 
-    if UnitHasBuffFromAuraDataIndex(unit, targetSpellID, nil) then
+    if UnitHasBuffFromAuraDataIndex(unit, targetSpellID) then
         return true
     end
 
@@ -244,59 +239,6 @@ local function UnitHasBuffFromDefinition(unit, definition)
     for _, candidateSpellID in ipairs(definition.spellIDs or {}) do
         if UnitHasBuffFromSpellID(unit, candidateSpellID) then
             return true
-        end
-    end
-
-    if AuraUtil and AuraUtil.FindAuraByName then
-        for _, candidateSpellID in ipairs(definition.spellIDs or {}) do
-            local candidateName = SafeGetSpellInfo(candidateSpellID)
-            if candidateName then
-                local ok, aura = pcall(AuraUtil.FindAuraByName, candidateName, unit, "HELPFUL")
-                if ok and aura then
-                    return true
-                end
-            end
-        end
-    end
-
-    for _, candidateSpellID in ipairs(definition.spellIDs or {}) do
-        local candidateName = SafeGetSpellInfo(candidateSpellID)
-        if candidateName and UnitHasBuffFromAuraDataIndex(unit, nil, candidateName) then
-            return true
-        end
-    end
-
-    if UnitAura then
-        for _, candidateSpellID in ipairs(definition.spellIDs or {}) do
-            local candidateName = SafeGetSpellInfo(candidateSpellID)
-            if candidateName then
-                for index = 1, MAX_AURA_SCAN do
-                    local auraName = UnitAura(unit, index, "HELPFUL")
-                    if not auraName then
-                        break
-                    end
-                    if auraName == candidateName then
-                        return true
-                    end
-                end
-            end
-        end
-    end
-
-    if UnitBuff then
-        for _, candidateSpellID in ipairs(definition.spellIDs or {}) do
-            local candidateName = SafeGetSpellInfo(candidateSpellID)
-            if candidateName then
-                for index = 1, MAX_AURA_SCAN do
-                    local auraName = UnitBuff(unit, index)
-                    if not auraName then
-                        break
-                    end
-                    if auraName == candidateName then
-                        return true
-                    end
-                end
-            end
         end
     end
 
