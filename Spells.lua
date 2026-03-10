@@ -131,45 +131,43 @@ local SPELLS = {
     -- PALADIN
     [31884] = { cd = 120, type = "OFF", class = "PALADIN" }, -- Avenging Wrath
     [96231] = { cd = 15, type = "INT", class = "PALADIN" }, -- Rebuke
-    [216331] = { cd = 120, type = "OFF", class = "PALADIN" }, -- Avenging Crusader
-    [642] = { cd = 240, type = "DEF", class = "PALADIN" }, -- Divine Shield
+    [216331] = { cd = 60, type = "OFF", class = "PALADIN", specs = { "HOLY" } }, -- Avenging Crusader
+    [642] = { cd = 300, type = "DEF", class = "PALADIN" }, -- Divine Shield
     [6940] = { cd = 120, type = "DEF", class = "PALADIN" }, -- Blessing of Sacrifice
-    [31850] = { cd = 120, type = "DEF", class = "PALADIN" }, -- Ardent Defender
+    [31850] = { cd = 90, type = "DEF", class = "PALADIN", specs = { "PROTECTION" } }, -- Ardent Defender
 
     -- EVOKER
     [375087] = { cd = 120, type = "OFF", class = "EVOKER", specs = { "DEVASTATION" } }, -- Dragonrage
-    [351338] = { cd = 40, type = "INT", class = "EVOKER" }, -- Quell
+    [351338] = { cd = 20, type = "INT", class = "EVOKER" }, -- Quell
     [370553] = { cd = 120, type = "OFF", class = "EVOKER" }, -- Tip the Scales
     [357210] = { cd = 120, type = "OFF", class = "EVOKER" }, -- Deep Breath
     [363916] = { cd = 90, type = "DEF", class = "EVOKER" }, -- Obsidian Scales
-    [374227] = { cd = 90, type = "DEF", class = "EVOKER" }, -- Zephyr
+    [374227] = { cd = 120, type = "DEF", class = "EVOKER" }, -- Zephyr
 
     -- MAGE
     [190319] = { cd = 120, type = "OFF", class = "MAGE", specs = { "FIRE" } }, -- Combustion
-    [2139] = { cd = 24, type = "INT", class = "MAGE" }, -- Counterspell
     [321507] = { cd = 45, type = "OFF", class = "MAGE", specs = { "ARCANE" } }, -- [Touch of the Magi]
     [365350] = { cd = 90, type = "OFF", class = "MAGE", specs = { "ARCANE" } }, -- [Arcane Surge]
-    [12472] = { cd = 180, type = "OFF", class = "MAGE", specs = { "FROST" } }, -- Icy Veins
+    [12472] = { cd = 120, type = "OFF", class = "MAGE", specs = { "FROST" } }, -- Icy Veins
     [45438] = { cd = 240, type = "DEF", class = "MAGE" }, -- Ice Block
-    [2139] = { cd = 20, type = "INT", class = "MAGE" }, -- Counterspell
-    [342245] = { cd = 50, type = "DEF", class = "MAGE" }, -- Alter Time
-    
+    [2139] = { cd = 25, type = "INT", class = "MAGE" }, -- Counterspell
+    [342245] = { cd = 60, type = "DEF", class = "MAGE" }, -- Alter Time
 
     -- PRIEST
     [10060] = { cd = 120, type = "OFF", class = "PRIEST" }, -- Power Infusion
-    [228260] = { cd = 90, type = "OFF", class = "PRIEST", specs = { "SHADOW" } }, -- Void Eruption
+    [228260] = { cd = 120, type = "OFF", class = "PRIEST", specs = { "SHADOW" } }, -- Voidform
     [200183] = { cd = 120, type = "OFF", class = "PRIEST", specs = { "HOLY" } }, -- Apotheosis
     [47585] = { cd = 120, type = "DEF", class = "PRIEST", specs = { "SHADOW" } }, -- Dispersion
     [33206] = { cd = 180, type = "DEF", class = "PRIEST", specs = { "DISC" } }, -- Pain Suppression
     [47788] = { cd = 180, type = "DEF", class = "PRIEST", specs = { "HOLY" } }, -- Guardian Spirit
-    [19236] = { cd = 90, type = "DEF", class = "PRIEST" }, -- Desperate Prayer
-    [11487] = { cd = 30, type = "INT", class = "PRIEST", specs = { "SHADOW" } }, -- Interrupt
-    [15286] = { cd = 120, type = "DEF", class = "PRIEST" }, --[Vampiric Embrace]
+    [19236] = { cd = 90, type = "DEF", class = "PRIEST", specs = { "DISC", "HOLY" } }, -- Desperate Prayer
+    [15487] = { cd = 30, type = "INT", class = "PRIEST", specs = { "SHADOW" } }, -- Silence
+    [15286] = { cd = 120, type = "DEF", class = "PRIEST", specs = { "SHADOW" } }, -- Vampiric Embrace
 
     -- ROGUE
     [13750] = { cd = 180, type = "OFF", class = "ROGUE", specs = { "OUTLAW" } }, -- Adrenaline Rush
     [1766] = { cd = 15, type = "INT", class = "ROGUE" }, -- Kick
-    [121471] = { cd = 180, type = "OFF", class = "ROGUE" }, -- Shadow Blades
+    [121471] = { cd = 90, type = "OFF", class = "ROGUE" }, -- Shadow Blades
     [31224] = { cd = 120, type = "DEF", class = "ROGUE" }, -- Cloak of Shadows
     [5277] = { cd = 120, type = "DEF", class = "ROGUE" }, -- Evasion
 
@@ -185,31 +183,28 @@ local SPELLS = {
     -- SHAMAN
     [191634] = { cd = 60, type = "OFF", class = "SHAMAN", specs = { "ELEMENTAL" } }, -- Stormkeeper
     [57994] = { cd = 12, type = "INT", class = "SHAMAN" }, -- Wind Shear
-    [321530] = { cd = 300, type = "OFF", class = "SHAMAN" }, -- Bloodlust
-    [114050] = { cd = 180, type = "OFF", class = "SHAMAN" }, -- Ascendance
-    [198067] = { cd = 150, type = "OFF", class = "SHAMAN" }, -- Fire Elemental
-    [108271] = { cd = 90, type = "DEF", class = "SHAMAN" }, -- Astral Shift
+    [2825] = { cd = 300, type = "OFF", class = "SHAMAN" }, -- Bloodlust
+    [114050] = { cd = 180, type = "OFF", class = "SHAMAN", specs = { "ELEMENTAL" } }, -- Ascendance
+    [198067] = { cd = 120, type = "OFF", class = "SHAMAN", specs = { "ELEMENTAL" } }, -- Fire Elemental
+    [108271] = { cd = 120, type = "DEF", class = "SHAMAN" }, -- Astral Shift
 
     -- MONK
-    [115080] = { cd = 120, type = "OFF", class = "MONK", specs = { "WINDWALKER" } }, -- Touch of Death
-    [116705] = { cd = 15, type = "INT", class = "MONK" }, -- Spear Hand Strike
+    [116705] = { cd = 15, type = "INT", class = "MONK", specs = { "BREWMASTER", "WINDWALKER" } }, -- Spear Hand Strike
     [137639] = { cd = 90, type = "OFF", class = "MONK", specs = { "WINDWALKER" } }, -- Storm, Earth, and Fire
     [123904] = { cd = 120, type = "OFF", class = "MONK", specs = { "WINDWALKER" } }, -- Invoke Xuen, the White Tiger
     [115203] = { cd = 360, type = "DEF", class = "MONK" }, -- Fortifying Brew
-    [122783] = { cd = 90, type = "DEF", class = "MONK", specs = { "WINDWALKER" } }, -- Diffuse Magic
-    [132578] = { cd = 120, type = "DEF", class = "MONK" },--[Invoke Niuzao, the Black Ox]
-    [115399] = { cd = 135, type = "DEF", class = "MONK" },--[Black Ox Brew]
-    [116844] = { cd = 45, type = "DEF", class = "MONK" },--[Ring of Peace]
-    [119381] = { cd = 50, type = "DEF", class = "MONK" },--[Leg Sweep]
-    [119582] = { cd = 20, type = "DEF", class = "MONK" },--[Purifying Brew]
-    [1241059] = { cd = 20, type = "DEF", class = "MONK" },--[Celestial Infusion]
-    [116705] = { cd = 15, type = "INT", class = "MONK" }, -- spear hand strike
+    [122783] = { cd = 90, type = "DEF", class = "MONK", specs = { "WINDWALKER", "MISTWEAVER" } }, -- Diffuse Magic
+    [132578] = { cd = 120, type = "DEF", class = "MONK", specs = { "BREWMASTER" } }, -- Invoke Niuzao, the Black Ox
+    [115399] = { cd = 120, type = "DEF", class = "MONK", specs = { "BREWMASTER" } }, -- Black Ox Brew
+    [119582] = { cd = 20, type = "DEF", class = "MONK", specs = { "BREWMASTER" } }, -- Purifying Brew
+    [1241059] = { cd = 45, type = "DEF", class = "MONK", specs = { "BREWMASTER" } }, -- Celestial Infusion
+
     -- WARLOCK
-    [1122] = { cd = 180, type = "OFF", class = "WARLOCK", specs = { "DESTRO" } }, -- Summon Infernal
-    [205180] = { cd = 120, type = "OFF", class = "WARLOCK", specs = { "DEMO" } }, -- Summon Darkglare
+    [1122] = { cd = 120, type = "OFF", class = "WARLOCK", specs = { "DESTRO" } }, -- Summon Infernal
+    [205180] = { cd = 120, type = "OFF", class = "WARLOCK", specs = { "AFFLICTION" } }, -- Summon Darkglare
     [113860] = { cd = 120, type = "OFF", class = "WARLOCK", specs = { "AFFLICTION" } }, -- Dark Soul: Misery
-    [265187] = { cd = 120, type = "OFF", class = "WARLOCK", specs = { "DEMO" } }, -- Dark Soul: Summon demonic Tyrant
-    [1276672] = { cd = 120, type = "OFF", class = "WARLOCK" }, -- Dark Soul: Summon Doomguard
+    [265187] = { cd = 60, type = "OFF", class = "WARLOCK", specs = { "DEMO" } }, -- Summon Demonic Tyrant
+    [1276672] = { cd = 120, type = "OFF", class = "WARLOCK", specs = { "DEMO" } }, -- Summon Doomguard
     [108416] = { cd = 60, type = "DEF", class = "WARLOCK" }, -- Dark Pact
     [104773] = { cd = 180, type = "DEF", class = "WARLOCK" }, -- Unending Resolve
     [119914] = { cd = 30, type = "INT", class = "WARLOCK", specs = { "DEMO" } }, -- Axe Toss
@@ -218,37 +213,36 @@ local SPELLS = {
     -- WARRIOR
     [97462] = { cd = 180, type = "DEF", class = "WARRIOR" }, -- Rallying Cry
     [6552] = { cd = 15, type = "INT", class = "WARRIOR" }, -- Pummel
-    [871] = { cd = 240, type = "DEF", class = "WARRIOR" }, -- Shield Wall
+    [871] = { cd = 180, type = "DEF", class = "WARRIOR", specs = { "PROTECTION" } }, -- Shield Wall
     [118038] = { cd = 120, type = "DEF", class = "WARRIOR" }, -- Die by the Sword
     [1719] = { cd = 90, type = "OFF", class = "WARRIOR", specs = { "FURY" } }, -- Recklessness
-    [107574] = { cd = 90, type = "OFF", class = "WARRIOR", specs = { "ARMS", "FURY" } }, -- Avatar
+    [107574] = { cd = 90, type = "OFF", class = "WARRIOR", specs = { "ARMS", "FURY", "PROTECTION" } }, -- Avatar
 
     -- DRUID
-    [22812] = { cd = 60, type = "DEF", class = "DRUID" }, -- Barkskin
-    [106839] = { cd = 15, type = "INT", class = "DRUID" }, -- Skull Bash
-    [61336] = { cd = 180, type = "DEF", class = "DRUID" }, -- Survival Instincts
-    [102342] = { cd = 90, type = "DEF", class = "DRUID" }, -- Ironbark
+    [22812] = { cd = 60, type = "DEF", class = "DRUID", specs = { "BALANCE", "GUARDIAN", "RESTORATION" } }, -- Barkskin
+    [106839] = { cd = 15, type = "INT", class = "DRUID", specs = { "FERAL", "GUARDIAN" } }, -- Skull Bash
+    [61336] = { cd = 180, type = "DEF", class = "DRUID", specs = { "FERAL", "GUARDIAN" } }, -- Survival Instincts
+    [102342] = { cd = 90, type = "DEF", class = "DRUID", specs = { "RESTORATION" } }, -- Ironbark
     [106951] = { cd = 180, type = "OFF", class = "DRUID", specs = { "FERAL" } }, -- Berserk
     [194223] = { cd = 180, type = "OFF", class = "DRUID", specs = { "BALANCE" } }, -- Celestial Alignment
-    [204066] = { cd = 180, type = "DEF", class = "DRUID" , specs = { "GUARDIAN" } }, -- Lunar beam
-    [22842] = { cd = 36, type = "DEF", class = "DRUID" , specs = { "GUARDIAN" }}, -- Frenzied Regeneration
-    [102558] = { cd = 36, type = "DEF", class = "DRUID", specs = { "GUARDIAN" }},--[Incarnation: Guardian of Ursoc]
+    [204066] = { cd = 60, type = "DEF", class = "DRUID", specs = { "GUARDIAN" } }, -- Lunar Beam
+    [22842] = { cd = 36, type = "DEF", class = "DRUID", specs = { "GUARDIAN" } }, -- Frenzied Regeneration
+    [102558] = { cd = 180, type = "DEF", class = "DRUID", specs = { "GUARDIAN" } }, -- Incarnation: Guardian of Ursoc
 
     -- DEATH KNIGHT
     [48792] = { cd = 120, type = "DEF", class = "DEATHKNIGHT" }, -- Icebound Fortitude
     [47528] = { cd = 15, type = "INT", class = "DEATHKNIGHT" }, -- Mind Freeze
-    [48707] = { cd = 40, type = "DEF", class = "DEATHKNIGHT" }, -- Anti-Magic Shell
-    [51271] = { cd = 60, type = "OFF", class = "DEATHKNIGHT", specs = { "FROST" } }, -- Pillar of Frost
-    [47568] = { cd = 120, type = "OFF", class = "DEATHKNIGHT", specs = { "FROST" } }, -- Empower Rune Weapon
-    [1233448] = { cd = 45, type = "OFF", class = "DEATHKNIGHT", specs = { "UNHOLY" } }, -- User provided Midnight DK CD
+    [48707] = { cd = 60, type = "DEF", class = "DEATHKNIGHT" }, -- Anti-Magic Shell
+    [51271] = { cd = 45, type = "OFF", class = "DEATHKNIGHT", specs = { "FROST" } }, -- Pillar of Frost
+    [47568] = { cd = 30, type = "OFF", class = "DEATHKNIGHT", specs = { "FROST" } }, -- Empower Rune Weapon
+    [1233448] = { cd = 45, type = "OFF", class = "DEATHKNIGHT", specs = { "UNHOLY" } }, -- Dark Transformation
     [42650] = { cd = 90, type = "OFF", class = "DEATHKNIGHT", specs = { "UNHOLY" } }, -- Army of the Dead
 
     -- DEMON HUNTER
-    [196555] = { cd = 120, type = "DEF", class = "DEMONHUNTER" }, -- Netherwalk
     [183752] = { cd = 15, type = "INT", class = "DEMONHUNTER" }, -- Disrupt
-    [191427] = { cd = 180, type = "OFF", class = "DEMONHUNTER", specs = { "HAVOC" } }, -- Metamorphosis
+    [191427] = { cd = 120, type = "OFF", class = "DEMONHUNTER", specs = { "HAVOC" } }, -- Metamorphosis
     [198589] = { cd = 60, type = "DEF", class = "DEMONHUNTER", specs = { "HAVOC" } }, -- Blur
-    [196718] = { cd = 300, type = "DEF", class = "DEMONHUNTER", specs = { "HAVOC" } }, -- Darkness
+    [196718] = { cd = 300, type = "DEF", class = "DEMONHUNTER" }, -- Darkness
 }
 
 local BASE_SPELLS = {}

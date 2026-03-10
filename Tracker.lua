@@ -28,7 +28,7 @@ local MISSING_BUFFS = {
     { class = "MAGE", spellIDs = { 1459 } }, -- Arcane Intellect
     { class = "PRIEST", spellIDs = { 21562 } }, -- Power Word: Fortitude
     { class = "WARRIOR", spellIDs = { 6673 } }, -- Battle Shout
-    { class = "EVOKER", spellIDs = { 381748 } }, -- Blessing of the Bronze
+    { class = "EVOKER", spellIDs = { 381746 } }, -- Blessing of the Bronze
     { class = "DRUID", spellIDs = { 1126 } }, -- Mark of the Wild
     { class = "SHAMAN", spellIDs = { 462854, 204330 } }, -- Skyfury (version fallback)
 }
