@@ -20,6 +20,11 @@ local TRACKER_ATTACH_LABELS = {
     TOP = "Top",
     BOTTOM = "Bottom",
 }
+local TRACKER_ANCHOR_SOURCE_CYCLE = { "BLIZZARD", "DANDERS" }
+local TRACKER_ANCHOR_SOURCE_LABELS = {
+    BLIZZARD = "Blizzard Frames",
+    DANDERS = "DandersFrames",
+}
 
 local DebugPrint = PartyOffCDCore.DebugPrint
 local SafeGetSpellInfo = PartyOffCDCore.SafeGetSpellInfo
@@ -33,6 +38,15 @@ local function GetNextTrackerAttach(currentAttach)
         end
     end
     return TRACKER_ATTACH_CYCLE[1]
+end
+
+local function GetNextTrackerAnchorSource(currentSource)
+    for index, source in ipairs(TRACKER_ANCHOR_SOURCE_CYCLE) do
+        if source == currentSource then
+            return TRACKER_ANCHOR_SOURCE_CYCLE[(index % #TRACKER_ANCHOR_SOURCE_CYCLE) + 1]
+        end
+    end
+    return TRACKER_ANCHOR_SOURCE_CYCLE[1]
 end
 
 function PartyOffCD:CreateConfigPanel()
@@ -231,6 +245,28 @@ function PartyOffCD:RefreshConfigPanel()
     layoutHeader:SetText("Tracker Layout")
     self.configRows[#self.configRows + 1] = layoutHeader
     y = y - 24
+
+    local sourceButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    sourceButton:SetSize(138, 20)
+    sourceButton:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    sourceButton:SetText("Source: " .. (TRACKER_ANCHOR_SOURCE_LABELS[self:GetTrackerAnchorSource()] or "Blizzard Frames"))
+    sourceButton:SetScript("OnClick", function()
+        local nextSource = GetNextTrackerAnchorSource(PartyOffCD:GetTrackerAnchorSource())
+        PartyOffCD:SetTrackerAnchorSource(nextSource)
+        PartyOffCD:RefreshConfigPanel()
+        PartyOffCD:RefreshTracker()
+    end)
+    self.configRows[#self.configRows + 1] = sourceButton
+
+    local sourceHint = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    sourceHint:SetPoint("LEFT", sourceButton, "RIGHT", 12, 0)
+    if self:GetTrackerAnchorSource() == "DANDERS" then
+        sourceHint:SetText("Uses DandersFrames containers when available")
+    else
+        sourceHint:SetText("Uses Blizzard compact party and raid frames")
+    end
+    self.configRows[#self.configRows + 1] = sourceHint
+    y = y - 28
 
     local attachButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     attachButton:SetSize(138, 20)
