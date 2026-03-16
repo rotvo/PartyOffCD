@@ -53,6 +53,18 @@ local function NormalizeTrackerAttach(attach)
     return attach
 end
 
+local function IsValidTrackerAnchorSource(source)
+    return source == "BLIZZARD" or source == "DANDERS"
+end
+
+local function NormalizeTrackerAnchorSource(source)
+    source = string.upper(tostring(source or ""))
+    if not IsValidTrackerAnchorSource(source) then
+        return "BLIZZARD"
+    end
+    return source
+end
+
 local function GetSpacingForIconSize(iconSize)
     return math.max(1, math.floor(ICON_SPACING * (iconSize / ICON_SIZE)))
 end
@@ -354,10 +366,154 @@ local function GetCompactPartyAnchor(index)
     return nil
 end
 
+local function GetDandersFramesTrackerAnchor()
+    local dandersFrames = rawget(_G, "DandersFrames")
+    if not dandersFrames then
+        return nil
+    end
+
+    local partyAnchor = dandersFrames.partyContainer or dandersFrames.container
+    local raidAnchor = dandersFrames.raidContainer
+
+    -- Match DandersFrames usage: prefer party/header container, then legacy container, then raid.
+    if partyAnchor and (not partyAnchor.IsShown or partyAnchor:IsShown()) then
+        return partyAnchor
+    end
+
+    if raidAnchor and (not raidAnchor.IsShown or raidAnchor:IsShown()) then
+        return raidAnchor
+    end
+
+    if partyAnchor then
+        return partyAnchor
+    end
+
+    if raidAnchor then
+        return raidAnchor
+    end
+
+    return nil
+end
+
+local function GetDandersFramesUnitAnchor(unit)
+    local dandersFrames = rawget(_G, "DandersFrames")
+    if not dandersFrames or not unit then
+        return nil
+    end
+
+    if unit == "player" and dandersFrames.GetPlayerFrame then
+        local ok, frame = pcall(dandersFrames.GetPlayerFrame, dandersFrames)
+        if ok and frame and (not frame.IsShown or frame:IsShown()) then
+            return frame
+        end
+    end
+
+    local partyIndex = tonumber(unit:match("^party(%d+)$"))
+    if partyIndex and dandersFrames.GetPartyFrame then
+        local ok, frame = pcall(dandersFrames.GetPartyFrame, dandersFrames, partyIndex)
+        if ok and frame and (not frame.IsShown or frame:IsShown()) then
+            return frame
+        end
+    end
+
+    local raidIndex = tonumber(unit:match("^raid(%d+)$"))
+    if raidIndex then
+        if dandersFrames.GetRaidFrame then
+            local ok, frame = pcall(dandersFrames.GetRaidFrame, dandersFrames, raidIndex)
+            if ok and frame and (not frame.IsShown or frame:IsShown()) then
+                return frame
+            end
+        end
+        if type(dandersFrames.raidFrames) == "table" then
+            local frame = dandersFrames.raidFrames[raidIndex]
+            if frame and (not frame.IsShown or frame:IsShown()) then
+                return frame
+            end
+        end
+    end
+
+    if partyIndex and type(dandersFrames.partyFrames) == "table" then
+        local frame = dandersFrames.partyFrames[partyIndex]
+        if frame and (not frame.IsShown or frame:IsShown()) then
+            return frame
+        end
+    end
+
+    return nil
+end
+
+local function GetDandersFramesTrackedWidth(unit)
+    local unitFrame = GetDandersFramesUnitAnchor(unit)
+    if unitFrame and unitFrame.GetWidth then
+        local width = unitFrame:GetWidth() or 0
+        if width > 0 then
+            return width
+        end
+    end
+
+    local dandersFrames = rawget(_G, "DandersFrames")
+    if not dandersFrames then
+        return nil
+    end
+
+    if dandersFrames.GetDB then
+        local ok, partyDB = pcall(dandersFrames.GetDB, dandersFrames)
+        if ok and type(partyDB) == "table" then
+            local width = tonumber(partyDB.frameWidth)
+            if width and width > 0 then
+                return width
+            end
+        end
+    end
+
+    local dbWidth = dandersFrames.db
+        and dandersFrames.db.party
+        and tonumber(dandersFrames.db.party.frameWidth)
+    if dbWidth and dbWidth > 0 then
+        return dbWidth
+    end
+
+    local defaultWidth = dandersFrames.PartyDefaults and tonumber(dandersFrames.PartyDefaults.frameWidth)
+    if defaultWidth and defaultWidth > 0 then
+        return defaultWidth
+    end
+
+    return 125
+end
+
+local function SetFramePointForTrackerAttach(frame, target, attach, gap)
+    attach = NormalizeTrackerAttach(attach)
+    gap = gap or 8
+
+    if attach == "RIGHT" then
+        frame:SetPoint("TOPLEFT", target, "TOPRIGHT", gap, 0)
+    elseif attach == "TOP" then
+        frame:SetPoint("BOTTOMLEFT", target, "TOPLEFT", 0, gap)
+    elseif attach == "BOTTOM" then
+        frame:SetPoint("TOPLEFT", target, "BOTTOMLEFT", 0, -gap)
+    else
+        frame:SetPoint("TOPRIGHT", target, "TOPLEFT", -gap, 0)
+    end
+end
+
 function PartyOffCD:GetTrackerAttach()
     local dbAttach = self.db and self.db.trackerAttach
     local defaultAttach = (DB_DEFAULTS and DB_DEFAULTS.trackerAttach) or "LEFT"
     return NormalizeTrackerAttach(dbAttach or defaultAttach)
+end
+
+function PartyOffCD:GetTrackerAnchorSource()
+    local dbSource = self.db and self.db.trackerAnchorSource
+    local defaultSource = (DB_DEFAULTS and DB_DEFAULTS.trackerAnchorSource) or "BLIZZARD"
+    return NormalizeTrackerAnchorSource(dbSource or defaultSource)
+end
+
+function PartyOffCD:ShouldUseDandersFramesTracker()
+    if self:GetTrackerAnchorSource() ~= "DANDERS" then
+        return false
+    end
+
+    return GetDandersFramesTrackerAnchor() ~= nil
 end
 
 function PartyOffCD:GetTrackerColumnLimit(attach)
@@ -432,6 +588,20 @@ function PartyOffCD:SetTrackerColumns(columns)
     end
 
     self.db.trackerColumns = value
+    return true
+end
+
+function PartyOffCD:SetTrackerAnchorSource(source)
+    if not self.db then
+        return false
+    end
+
+    local normalized = NormalizeTrackerAnchorSource(source)
+    if self.db.trackerAnchorSource == normalized then
+        return false
+    end
+
+    self.db.trackerAnchorSource = normalized
     return true
 end
 
@@ -519,6 +689,23 @@ function PartyOffCD:CreateTrackerFrame()
     title:SetText("")
 
     self.trackerFrame = frame
+end
+
+function PartyOffCD:UpdateTrackerFrameAnchor()
+    if not self.trackerFrame then
+        return false
+    end
+
+    self.trackerFrame:ClearAllPoints()
+
+    local externalAnchor = self:ShouldUseDandersFramesTracker() and GetDandersFramesTrackerAnchor() or nil
+    if externalAnchor then
+        SetFramePointForTrackerAttach(self.trackerFrame, externalAnchor, self:GetTrackerAttach(), 8)
+        return true
+    end
+
+    self.trackerFrame:SetPoint("LEFT", UIParent, "LEFT", FALLBACK_X, FALLBACK_Y)
+    return false
 end
 
 function PartyOffCD:AcquireIcon(parent)
@@ -693,8 +880,44 @@ function PartyOffCD:GetSortedCooldowns(senderKey, onlyType)
     return entries
 end
 
-function PartyOffCD:AnchorRow(row, index)
+function PartyOffCD:AnchorRow(row, rosterEntry)
+    local index = row.index or 1
     row:ClearAllPoints()
+
+    if self:ShouldUseDandersFramesTracker() then
+        local attach = self:GetTrackerAttach()
+        row.layoutAttach = attach
+
+        local unitTarget = rosterEntry and GetDandersFramesUnitAnchor(rosterEntry.unit) or nil
+        if unitTarget then
+            row:SetParent(unitTarget)
+            if attach == "RIGHT" then
+                row:SetPoint("TOPLEFT", unitTarget, "TOPRIGHT", 4, 0)
+            elseif attach == "TOP" then
+                row:SetPoint("BOTTOMLEFT", unitTarget, "TOPLEFT", 0, 4)
+            elseif attach == "BOTTOM" then
+                row:SetPoint("TOPLEFT", unitTarget, "BOTTOMLEFT", 0, -4)
+            else
+                row:SetPoint("TOPRIGHT", unitTarget, "TOPLEFT", -4, 0)
+            end
+        else
+            row:SetParent(self.trackerFrame)
+            if attach == "LEFT" then
+                if index == 1 then
+                    row:SetPoint("TOPRIGHT", self.trackerFrame, "TOPRIGHT", 0, 0)
+                else
+                    row:SetPoint("TOPRIGHT", self.rows[index - 1], "BOTTOMRIGHT", 0, -8)
+                end
+            else
+                if index == 1 then
+                    row:SetPoint("TOPLEFT", self.trackerFrame, "TOPLEFT", 0, 0)
+                else
+                    row:SetPoint("TOPLEFT", self.rows[index - 1], "BOTTOMLEFT", 0, -8)
+                end
+            end
+        end
+        return
+    end
 
     local target = GetCompactPartyAnchor(index)
     if target then
@@ -733,24 +956,32 @@ function PartyOffCD:RenderRow(row, rosterEntry)
     end
 
     row:Show()
-    self:AnchorRow(row, row.index)
+    self:AnchorRow(row, rosterEntry)
 
     local attach = row.layoutAttach or self:GetTrackerAttach()
     local horizontalAttach = attach == "LEFT" or attach == "RIGHT"
     local iconSize, iconSpacing = self:GetTrackerIconMetrics(row, attach, horizontalAttach and 1 or nil)
+    local fillWidthBeforeWrap = self:ShouldUseDandersFramesTracker() and (not horizontalAttach)
 
     local groupedEntries = {}
-    local currentGroup = nil
-    for _, entry in ipairs(entries) do
-        local entryType = entry.meta and entry.meta.type or "OFF"
-        if not currentGroup or currentGroup.type ~= entryType then
-            currentGroup = {
-                type = entryType,
-                entries = {},
-            }
-            groupedEntries[#groupedEntries + 1] = currentGroup
+    if fillWidthBeforeWrap then
+        groupedEntries[1] = {
+            type = "ALL",
+            entries = entries,
+        }
+    else
+        local currentGroup = nil
+        for _, entry in ipairs(entries) do
+            local entryType = entry.meta and entry.meta.type or "OFF"
+            if not currentGroup or currentGroup.type ~= entryType then
+                currentGroup = {
+                    type = entryType,
+                    entries = {},
+                }
+                groupedEntries[#groupedEntries + 1] = currentGroup
+            end
+            currentGroup.entries[#currentGroup.entries + 1] = entry
         end
-        currentGroup.entries[#currentGroup.entries + 1] = entry
     end
 
     local slots = {}
@@ -799,7 +1030,7 @@ function PartyOffCD:RenderRow(row, rosterEntry)
         end
 
         awayOffset = awayOffset + sectionAwaySize
-        if groupIndex < #groupedEntries then
+        if (not fillWidthBeforeWrap) and groupIndex < #groupedEntries then
             awayOffset = awayOffset + TRACKER_TYPE_GAP
         end
     end
@@ -814,6 +1045,27 @@ function PartyOffCD:RenderRow(row, rosterEntry)
         rowWidth = totalCrossSize
         rowHeight = totalAwaySize
     end
+
+    if self:ShouldUseDandersFramesTracker() then
+        local parentFrame = row:GetParent()
+        local trackedWidth = nil
+
+        if parentFrame and parentFrame ~= self.trackerFrame and parentFrame.GetWidth then
+            local width = parentFrame:GetWidth() or 0
+            if width > 0 then
+                trackedWidth = width
+            end
+        end
+
+        if not trackedWidth then
+            trackedWidth = GetDandersFramesTrackedWidth(rosterEntry and rosterEntry.unit)
+        end
+
+        if trackedWidth and trackedWidth > 0 then
+            rowWidth = trackedWidth
+        end
+    end
+
     row:SetSize(rowWidth, rowHeight)
 
     for iconIndex, slot in ipairs(slots) do
@@ -1386,6 +1638,7 @@ function PartyOffCD:RefreshTracker()
     self:CreateTrackerFrame()
     self:CreateInterruptFrame()
     self:CreateMissingBuffFrame()
+    self:UpdateTrackerFrameAnchor()
     self.trackerFrame:Show()
 
     for index, entry in ipairs(self.roster) do

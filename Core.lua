@@ -10,6 +10,7 @@ PartyOffCDCore.DEFAULTS = {
     configRelativePoint = "CENTER",
     configX = 0,
     configY = 0,
+    trackerAnchorSource = "BLIZZARD",
     trackerAttach = "LEFT",
     trackerColumns = 1,
     trackerIconScale = 100,
