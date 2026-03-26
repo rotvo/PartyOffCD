@@ -252,9 +252,7 @@ function PartyOffCD:BuildRoster()
     local units = {}
 
     if IsInRaid() then
-        for index = 1, math.min(GetNumGroupMembers(), MAX_TRACKED_ROWS) do
-            units[#units + 1] = "raid" .. index
-        end
+        -- Tracker is party-only; leave units empty so the UI hides itself
     elseif IsInGroup() then
         units[#units + 1] = "player"
         for index = 1, MAX_TRACKED_ROWS - 1 do
@@ -1121,6 +1119,16 @@ function PartyOffCD:GetMissingBuffEntries()
         end
     end
 
+    -- In raid the tracker roster is intentionally empty; scan raid units directly
+    if IsInRaid() and not next(classInRoster) then
+        for i = 1, GetNumGroupMembers() do
+            local _, classToken = UnitClass("raid" .. i)
+            if classToken then
+                classInRoster[classToken] = true
+            end
+        end
+    end
+
     local missingEntries = {}
     for _, definition in ipairs(MISSING_BUFFS) do
         if classInRoster[definition.class] then
@@ -1373,13 +1381,19 @@ function PartyOffCD:RefreshTracker()
         if self.interruptFrame then
             self.interruptFrame:Hide()
         end
-        if self.missingBuffFrame then
-            self.missingBuffFrame:Hide()
-        end
         for _, row in ipairs(self.interruptRows) do
             row:Hide()
         end
-        self:ReleaseMissingBuffIcons()
+        -- Rows may be parented to CompactPartyFrames (not trackerFrame), so hide them explicitly
+        for _, row in ipairs(self.rows) do
+            if row then
+                self:ReleaseRowIcons(row)
+                row:Hide()
+            end
+        end
+        -- Missing buffs is independent of the party tracker; refresh it normally
+        self:CreateMissingBuffFrame()
+        self:RefreshMissingBuffFrame()
         return
     end
 

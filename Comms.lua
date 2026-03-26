@@ -17,7 +17,9 @@ local DebugPrint = PartyOffCDCore.DebugPrint
 local SafeGetSpellInfo = PartyOffCDCore.SafeGetSpellInfo
 
 function PartyOffCD:GetTargetChannel()
-    if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
+    local instanceCategory = LE_PARTY_CATEGORY_INSTANCE
+        or (Enum and Enum.PartyCategory and Enum.PartyCategory.Instance)
+    if instanceCategory and IsInGroup(instanceCategory) then
         return "INSTANCE_CHAT"
     end
 
