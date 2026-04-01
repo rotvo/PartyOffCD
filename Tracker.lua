@@ -24,6 +24,8 @@ local TRACKER_TYPE_GAP = ICON_SPACING + 8
 local MISSING_BUFF_ICON_SIZE = 36
 local MISSING_BUFF_ICON_SPACING = 8
 local MAX_AURA_SCAN = 255
+local COOLDOWN_ALERT_DURATION = 0.9
+local COOLDOWN_ALERT_HOLD = 0.45
 local MISSING_BUFFS = {
     { class = "MAGE", spellIDs = { 1459 } }, -- Arcane Intellect
     { class = "PRIEST", spellIDs = { 21562 } }, -- Power Word: Fortitude
@@ -35,14 +37,13 @@ local MISSING_BUFFS = {
 
 local SafeGetSpellInfo = PartyOffCDCore.SafeGetSpellInfo
 local GetUnitSpecID = PartyOffCDCore.GetUnitSpecID
-local ResolveSpecValue = PartyOffCDCore.ResolveSpecValue
 local FormatRemaining = PartyOffCDCore.FormatRemaining
 local GetUnitFullName = PartyOffCDCore.GetUnitFullName
 local NormalizeName = PartyOffCDCore.NormalizeName
 local ApplyLightOutline = PartyOffCDCore.ApplyLightOutline
 
 local function IsValidTrackerAttach(attach)
-    return attach == "LEFT" or attach == "RIGHT" or attach == "TOP" or attach == "BOTTOM"
+    return attach == "LEFT" or attach == "RIGHT" or attach == "CENTER" or attach == "TOP" or attach == "BOTTOM"
 end
 
 local function NormalizeTrackerAttach(attach)
@@ -250,16 +251,17 @@ function PartyOffCD:BuildRoster()
     wipe(self.rosterLookup)
 
     local units = {}
+    local excludeSelf = self:IsTrackerExcludeSelfEnabled()
 
     if IsInRaid() then
         -- Tracker is party-only; leave units empty so the UI hides itself
-    elseif IsInGroup() then
-        units[#units + 1] = "player"
+    elseif self:HasTrackedPartyMembers() then
+        if not excludeSelf then
+            units[#units + 1] = "player"
+        end
         for index = 1, MAX_TRACKED_ROWS - 1 do
             units[#units + 1] = "party" .. index
         end
-    else
-        units[#units + 1] = "player"
     end
 
     for _, unit in ipairs(units) do
@@ -352,10 +354,208 @@ local function GetCompactPartyAnchor(index)
     return nil
 end
 
+function PartyOffCD:GetRosterAnchor(index)
+    return GetCompactPartyAnchor(index)
+end
+
+local function CreateCooldownAlertFrame()
+    local frame = CreateFrame("Frame", nil, UIParent)
+    frame:SetFrameStrata("HIGH")
+    frame:SetToplevel(true)
+    frame:Hide()
+
+    frame.background = frame:CreateTexture(nil, "BACKGROUND")
+    frame.background:SetAllPoints()
+    frame.background:SetColorTexture(0, 0, 0, 0.35)
+
+    frame.icon = frame:CreateTexture(nil, "ARTWORK")
+    frame.icon:SetAllPoints()
+    frame.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    frame.highlight = frame:CreateTexture(nil, "OVERLAY")
+    frame.highlight:SetPoint("CENTER")
+    frame.highlight:SetBlendMode("ADD")
+    frame.highlight:SetTexture([[Interface\SpellActivationOverlay\IconAlert]])
+    frame.highlight:SetTexCoord(0.00781250, 0.50781250, 0.27734375, 0.52734375)
+    frame.highlight:SetVertexColor(1, 0.85, 0.15, 0.9)
+
+    frame.highlightOver = frame:CreateTexture(nil, "OVERLAY")
+    frame.highlightOver:SetPoint("CENTER")
+    frame.highlightOver:SetBlendMode("ADD")
+    frame.highlightOver:SetTexture([[Interface\SpellActivationOverlay\IconAlert]])
+    frame.highlightOver:SetTexCoord(0.00781250, 0.50781250, 0.53515625, 0.78515625)
+    frame.highlightOver:SetVertexColor(1, 0.92, 0.35, 0.75)
+
+    frame.animation = frame:CreateAnimationGroup()
+
+    local scaleIn = frame.animation:CreateAnimation("Scale")
+    scaleIn:SetOrder(1)
+    scaleIn:SetDuration(0.16)
+    scaleIn:SetScale(0.18, 0.18)
+
+    local alphaIn = frame.animation:CreateAnimation("Alpha")
+    alphaIn:SetOrder(1)
+    alphaIn:SetDuration(0.12)
+    alphaIn:SetFromAlpha(0)
+    alphaIn:SetToAlpha(1)
+
+    local scaleOut = frame.animation:CreateAnimation("Scale")
+    scaleOut:SetOrder(2)
+    scaleOut:SetDuration(0.28)
+    scaleOut:SetStartDelay(COOLDOWN_ALERT_HOLD)
+    scaleOut:SetScale(0.18, 0.18)
+
+    local alphaOut = frame.animation:CreateAnimation("Alpha")
+    alphaOut:SetOrder(2)
+    alphaOut:SetDuration(0.28)
+    alphaOut:SetStartDelay(COOLDOWN_ALERT_HOLD)
+    alphaOut:SetFromAlpha(1)
+    alphaOut:SetToAlpha(0)
+
+    frame.animation:SetScript("OnPlay", function(self)
+        local parent = self:GetParent()
+        parent:SetAlpha(1)
+        parent:SetScale(1)
+        parent:Show()
+    end)
+
+    frame.animation:SetScript("OnFinished", function(self)
+        local parent = self:GetParent()
+        parent:SetAlpha(1)
+        parent:SetScale(1)
+        parent:Hide()
+    end)
+
+    return frame
+end
+
+function PartyOffCD:ShowCooldownUseAlert(senderKey, spellID)
+    if not self:IsEnabledForCurrentContext() then
+        return false
+    end
+
+    senderKey = self:ResolveSenderKey(senderKey)
+    spellID = tonumber(spellID)
+    if not senderKey or not spellID then
+        return false
+    end
+
+    local rosterEntry = self.rosterLookup[senderKey]
+    if not rosterEntry then
+        return false
+    end
+
+    local rosterIndex
+    for index, entry in ipairs(self.roster) do
+        if entry.key == rosterEntry.key then
+            rosterIndex = index
+            break
+        end
+    end
+
+    if not rosterIndex then
+        return false
+    end
+
+    local anchor = self:GetRosterAnchor(rosterIndex)
+    if not anchor or not anchor:IsShown() then
+        return false
+    end
+
+    local _, iconTexture = SafeGetSpellInfo(spellID)
+    if not iconTexture then
+        return false
+    end
+
+    local alert = self.cooldownAlerts[senderKey]
+    if not alert then
+        alert = CreateCooldownAlertFrame()
+        self.cooldownAlerts[senderKey] = alert
+    end
+
+    local size = math.max(24, math.floor(math.min(anchor:GetWidth(), anchor:GetHeight()) * 0.78))
+    local glowSize = math.floor(size * 1.9)
+
+    alert:SetParent(UIParent)
+    alert:ClearAllPoints()
+    alert:SetPoint("CENTER", anchor, "CENTER", 0, 0)
+    alert:SetFrameLevel((anchor:GetFrameLevel() or 1) + 20)
+    alert:SetSize(size, size)
+    alert.icon:SetTexture(iconTexture)
+    alert.highlight:SetSize(glowSize, glowSize)
+    alert.highlightOver:SetSize(glowSize, glowSize)
+
+    if alert.animation:IsPlaying() then
+        alert.animation:Stop()
+    end
+
+    alert:SetAlpha(1)
+    alert:SetScale(0.82)
+    alert:Show()
+    alert.animation:Play()
+    return true
+end
+
 function PartyOffCD:GetTrackerAttach()
     local dbAttach = self.db and self.db.trackerAttach
     local defaultAttach = (DB_DEFAULTS and DB_DEFAULTS.trackerAttach) or "LEFT"
     return NormalizeTrackerAttach(dbAttach or defaultAttach)
+end
+
+function PartyOffCD:GetTrackerOffsetX()
+    local value = tonumber(self.db and self.db.trackerOffsetX)
+    if value == nil then
+        value = tonumber(DB_DEFAULTS and DB_DEFAULTS.trackerOffsetX) or -4
+    end
+    return math.floor(value)
+end
+
+function PartyOffCD:GetTrackerOffsetY()
+    local value = tonumber(self.db and self.db.trackerOffsetY)
+    if value == nil then
+        value = tonumber(DB_DEFAULTS and DB_DEFAULTS.trackerOffsetY) or 0
+    end
+    return math.floor(value)
+end
+
+function PartyOffCD:SetTrackerOffsetX(value)
+    if not self.db then
+        return false
+    end
+
+    value = math.floor(tonumber(value) or 0)
+    if value < -250 then
+        value = -250
+    elseif value > 250 then
+        value = 250
+    end
+
+    if self.db.trackerOffsetX == value then
+        return false
+    end
+
+    self.db.trackerOffsetX = value
+    return true
+end
+
+function PartyOffCD:SetTrackerOffsetY(value)
+    if not self.db then
+        return false
+    end
+
+    value = math.floor(tonumber(value) or 0)
+    if value < -250 then
+        value = -250
+    elseif value > 250 then
+        value = 250
+    end
+
+    if self.db.trackerOffsetY == value then
+        return false
+    end
+
+    self.db.trackerOffsetY = value
+    return true
 end
 
 function PartyOffCD:GetTrackerColumnLimit(attach)
@@ -379,6 +579,66 @@ function PartyOffCD:GetTrackerColumns()
     return columns
 end
 
+function PartyOffCD:GetTrackerRows()
+    local value = math.floor(tonumber(self.db and self.db.trackerRows) or tonumber(DB_DEFAULTS and DB_DEFAULTS.trackerRows) or 1)
+    if value < 1 then
+        value = 1
+    elseif value > 3 then
+        value = 3
+    end
+    return value
+end
+
+function PartyOffCD:SetTrackerRows(value)
+    if not self.db then
+        return false
+    end
+
+    value = math.floor(tonumber(value) or 1)
+    if value < 1 then
+        value = 1
+    elseif value > 3 then
+        value = 3
+    end
+
+    if self.db.trackerRows == value then
+        return false
+    end
+
+    self.db.trackerRows = value
+    return true
+end
+
+function PartyOffCD:GetTrackerMaxIcons()
+    local value = math.floor(tonumber(self.db and self.db.trackerMaxIcons) or tonumber(DB_DEFAULTS and DB_DEFAULTS.trackerMaxIcons) or 10)
+    if value < 1 then
+        value = 1
+    elseif value > 12 then
+        value = 12
+    end
+    return value
+end
+
+function PartyOffCD:SetTrackerMaxIcons(value)
+    if not self.db then
+        return false
+    end
+
+    value = math.floor(tonumber(value) or 10)
+    if value < 1 then
+        value = 1
+    elseif value > 12 then
+        value = 12
+    end
+
+    if self.db.trackerMaxIcons == value then
+        return false
+    end
+
+    self.db.trackerMaxIcons = value
+    return true
+end
+
 function PartyOffCD:GetTrackerIconScale()
     local dbScale = self.db and self.db.trackerIconScale
     local defaultScale = (DB_DEFAULTS and DB_DEFAULTS.trackerIconScale) or 100
@@ -389,6 +649,128 @@ function PartyOffCD:GetTrackerIconScale()
         scale = MAX_TRACKER_ICON_SCALE
     end
     return scale
+end
+
+function PartyOffCD:GetTrackerConfiguredIconSize()
+    return math.max(10, math.floor(ICON_SIZE * (self:GetTrackerIconScale() / 100)))
+end
+
+function PartyOffCD:SetTrackerConfiguredIconSize(size)
+    size = math.floor(tonumber(size) or ICON_SIZE)
+    if size < 10 then
+        size = 10
+    elseif size > 60 then
+        size = 60
+    end
+
+    local scale = math.floor((size * 100 / ICON_SIZE) + 0.5)
+    return self:SetTrackerIconScale(scale)
+end
+
+function PartyOffCD:IsTrackerTooltipsEnabled()
+    local value = self.db and self.db.trackerShowTooltips
+    if value == nil then
+        value = DB_DEFAULTS and DB_DEFAULTS.trackerShowTooltips
+    end
+    return value ~= false
+end
+
+function PartyOffCD:SetTrackerTooltipsEnabled(enabled)
+    if not self.db then
+        return false
+    end
+
+    local value = enabled and true or false
+    if self.db.trackerShowTooltips == value then
+        return false
+    end
+
+    self.db.trackerShowTooltips = value
+    return true
+end
+
+function PartyOffCD:IsTrackerReverseCooldownEnabled()
+    local value = self.db and self.db.trackerReverseCooldown
+    if value == nil then
+        value = DB_DEFAULTS and DB_DEFAULTS.trackerReverseCooldown
+    end
+    return value == true
+end
+
+function PartyOffCD:SetTrackerReverseCooldownEnabled(enabled)
+    if not self.db then
+        return false
+    end
+
+    local value = enabled and true or false
+    if self.db.trackerReverseCooldown == value then
+        return false
+    end
+
+    self.db.trackerReverseCooldown = value
+    return true
+end
+
+function PartyOffCD:IsTrackerExcludeSelfEnabled()
+    local value = self.db and self.db.trackerExcludeSelf
+    if value == nil then
+        value = DB_DEFAULTS and DB_DEFAULTS.trackerExcludeSelf
+    end
+    return value == true
+end
+
+function PartyOffCD:SetTrackerExcludeSelfEnabled(enabled)
+    if not self.db then
+        return false
+    end
+
+    local value = enabled and true or false
+    if self.db.trackerExcludeSelf == value then
+        return false
+    end
+
+    self.db.trackerExcludeSelf = value
+    return true
+end
+
+function PartyOffCD:IsTrackerTypeVisible(spellType)
+    local key
+    if spellType == "OFF" then
+        key = "trackerShowOffensive"
+    elseif spellType == "DEF" then
+        key = "trackerShowDefensive"
+    else
+        return true
+    end
+
+    local value = self.db and self.db[key]
+    if value == nil then
+        value = DB_DEFAULTS and DB_DEFAULTS[key]
+    end
+    return value ~= false
+end
+
+function PartyOffCD:SetTrackerTypeVisible(spellType, enabled)
+    if not self.db then
+        return false
+    end
+
+    local key
+    if spellType == "OFF" then
+        key = "trackerShowOffensive"
+    elseif spellType == "DEF" then
+        key = "trackerShowDefensive"
+    else
+        return false
+    end
+
+    local value = enabled and true or false
+    if self.db[key] == value then
+        return false
+    end
+
+    self.db[key] = value
+    return true
 end
 
 function PartyOffCD:SetTrackerAttach(attach)
@@ -537,7 +919,10 @@ function PartyOffCD:AcquireIcon(parent)
     icon.cooldown = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
     icon.cooldown:SetAllPoints()
     if icon.cooldown.SetDrawSwipe then
-        icon.cooldown:SetDrawSwipe(false)
+        icon.cooldown:SetDrawSwipe(true)
+    end
+    if icon.cooldown.SetSwipeColor then
+        icon.cooldown:SetSwipeColor(0, 0, 0, 0.8)
     end
     if icon.cooldown.SetDrawBling then
         icon.cooldown:SetDrawBling(false)
@@ -555,7 +940,7 @@ function PartyOffCD:AcquireIcon(parent)
     icon.typeText:SetPoint("TOP", icon, "TOP", 0, -2)
 
     icon:SetScript("OnEnter", function(button)
-        if not button.spellID then
+        if not button.spellID or not PartyOffCD:IsTrackerTooltipsEnabled() then
             return
         end
 
@@ -584,6 +969,7 @@ function PartyOffCD:ReleaseRowIcons(row)
         icon.spellID = nil
         icon.baseCD = nil
         icon:SetAlpha(1)
+        icon.texture:SetVertexColor(1, 1, 1, 1)
         if icon.texture.SetDesaturated then
             icon.texture:SetDesaturated(false)
         end
@@ -623,24 +1009,18 @@ function PartyOffCD:GetSortedCooldowns(senderKey, onlyType)
     local entries = {}
     local senderClass = self:GetSenderClass(senderKey)
     local senderSpecID = self:GetSenderSpecID(senderKey)
+    local senderUnit = self:GetSenderUnit(senderKey)
 
     for spellID in pairs(SPELLS) do
         if self:IsSpellEnabled(spellID) then
             local meta = self:GetEffectiveMeta(senderKey, spellID)
             local passesType = meta and ((onlyType and meta.type == onlyType) or (not onlyType and meta.type ~= "INT"))
-            local passesClass = meta and (not senderClass or meta.class == senderClass)
-            local passesSpec = passesType and passesClass and ((not meta.specs) or (not senderSpecID))
-            if passesClass and not passesSpec and meta.specs and senderSpecID then
-                for _, specValue in ipairs(meta.specs) do
-                    local allowedSpecID = ResolveSpecValue(meta.class, specValue)
-                    if allowedSpecID == senderSpecID then
-                        passesSpec = true
-                        break
-                    end
-                end
+            if passesType and not onlyType and meta and not self:IsTrackerTypeVisible(meta.type) then
+                passesType = false
             end
+            local passesClassAndSpec = passesType and self:DoesMetaMatchUnit(meta, senderClass, senderSpecID, senderUnit)
 
-            if passesType and passesClass and passesSpec then
+            if passesType and passesClassAndSpec then
                 local cooldownData = senderCooldowns and senderCooldowns[spellID] or nil
                 local endTime = cooldownData and (type(cooldownData) == "table" and cooldownData.endTime or cooldownData) or 0
                 local duration = cooldownData and (type(cooldownData) == "table" and cooldownData.duration or meta.cd) or meta.cd
@@ -695,25 +1075,32 @@ function PartyOffCD:AnchorRow(row, index)
     row:ClearAllPoints()
 
     local target = GetCompactPartyAnchor(index)
+    local attach = self:GetTrackerAttach()
+    local offsetX = self:GetTrackerOffsetX()
+    local offsetY = self:GetTrackerOffsetY()
+    row:SetParent(self.trackerFrame)
     if target then
-        local attach = self:GetTrackerAttach()
         row.layoutAttach = attach
-        row:SetParent(target)
+        row:SetFrameStrata(target:GetFrameStrata() or "MEDIUM")
+        row:SetFrameLevel((target:GetFrameLevel() or 1) + 8)
 
         if attach == "RIGHT" then
-            row:SetPoint("TOPLEFT", target, "TOPRIGHT", 4, 0)
+            row:SetPoint("LEFT", target, "RIGHT", offsetX, offsetY)
+        elseif attach == "CENTER" then
+            row:SetPoint("CENTER", target, "CENTER", offsetX, offsetY)
         elseif attach == "TOP" then
-            row:SetPoint("BOTTOMLEFT", target, "TOPLEFT", 0, 4)
+            row:SetPoint("BOTTOM", target, "TOP", offsetX, offsetY)
         elseif attach == "BOTTOM" then
-            row:SetPoint("TOPLEFT", target, "BOTTOMLEFT", 0, -4)
+            row:SetPoint("TOP", target, "BOTTOM", offsetX, offsetY)
         else
-            row:SetPoint("TOPRIGHT", target, "TOPLEFT", -4, 0)
+            row:SetPoint("RIGHT", target, "LEFT", offsetX, offsetY)
         end
     else
-        row.layoutAttach = "LEFT"
-        row:SetParent(self.trackerFrame)
+        row.layoutAttach = attach
+        row:SetFrameStrata(self.trackerFrame:GetFrameStrata() or "MEDIUM")
+        row:SetFrameLevel((self.trackerFrame:GetFrameLevel() or 1) + 1)
         if index == 1 then
-            row:SetPoint("TOPLEFT", self.trackerFrame, "TOPLEFT", 0, 0)
+            row:SetPoint("TOPLEFT", self.trackerFrame, "TOPLEFT", math.max(0, offsetX + 8), -math.max(0, -offsetY))
         else
             row:SetPoint("TOPLEFT", self.rows[index - 1], "BOTTOMLEFT", 0, -8)
         end
@@ -725,6 +1112,13 @@ function PartyOffCD:RenderRow(row, rosterEntry)
     self:ReleaseRowIcons(row)
 
     local entries = self:GetSortedCooldowns(rosterEntry.key)
+    local maxIcons = self:GetTrackerMaxIcons()
+    if maxIcons > 0 and #entries > maxIcons then
+        while #entries > maxIcons do
+            tremove(entries)
+        end
+    end
+
     if not entries or #entries == 0 then
         row:Hide()
         return
@@ -734,107 +1128,67 @@ function PartyOffCD:RenderRow(row, rosterEntry)
     self:AnchorRow(row, row.index)
 
     local attach = row.layoutAttach or self:GetTrackerAttach()
-    local horizontalAttach = attach == "LEFT" or attach == "RIGHT"
-    local iconSize, iconSpacing = self:GetTrackerIconMetrics(row, attach, horizontalAttach and 1 or nil)
+    local horizontalAttach = attach == "LEFT" or attach == "RIGHT" or attach == "CENTER"
+    local iconSize, iconSpacing = self:GetTrackerIconMetrics(row, attach, nil)
+    local configuredRows = self:GetTrackerRows()
+    local rowWidth
+    local rowHeight
+    local slotColumns
+    local slotRows
 
-    local groupedEntries = {}
-    local currentGroup = nil
-    for _, entry in ipairs(entries) do
-        local entryType = entry.meta and entry.meta.type or "OFF"
-        if not currentGroup or currentGroup.type ~= entryType then
-            currentGroup = {
-                type = entryType,
-                entries = {},
-            }
-            groupedEntries[#groupedEntries + 1] = currentGroup
-        end
-        currentGroup.entries[#currentGroup.entries + 1] = entry
-    end
-
-    local slots = {}
-    local awayOffset = 0
-    local maxCrossSize = iconSize
-    for groupIndex, group in ipairs(groupedEntries) do
-        local groupCount = #group.entries
-        local columns = self:GetTrackerGroupColumns(row, attach, groupCount, iconSize, iconSpacing)
-        local sectionAwaySize
-        local sectionCrossSize
-
-        if horizontalAttach then
-            local awaySlots = math.min(columns, groupCount)
-            local crossSlots = math.ceil(groupCount / columns)
-            sectionAwaySize = GetSpanSize(awaySlots, iconSize, iconSpacing)
-            sectionCrossSize = GetSpanSize(crossSlots, iconSize, iconSpacing)
-
-            for entryIndex, entry in ipairs(group.entries) do
-                local awayIndex = (entryIndex - 1) % columns
-                local crossIndex = math.floor((entryIndex - 1) / columns)
-                slots[#slots + 1] = {
-                    entry = entry,
-                    away = awayOffset + (awayIndex * (iconSize + iconSpacing)),
-                    cross = crossIndex * (iconSize + iconSpacing),
-                }
-            end
-        else
-            local crossSlots = math.min(columns, groupCount)
-            local awaySlots = math.ceil(groupCount / columns)
-            sectionCrossSize = GetSpanSize(crossSlots, iconSize, iconSpacing)
-            sectionAwaySize = GetSpanSize(awaySlots, iconSize, iconSpacing)
-
-            for entryIndex, entry in ipairs(group.entries) do
-                local crossIndex = (entryIndex - 1) % columns
-                local awayIndex = math.floor((entryIndex - 1) / columns)
-                slots[#slots + 1] = {
-                    entry = entry,
-                    away = awayOffset + (awayIndex * (iconSize + iconSpacing)),
-                    cross = crossIndex * (iconSize + iconSpacing),
-                }
-            end
-        end
-
-        if sectionCrossSize > maxCrossSize then
-            maxCrossSize = sectionCrossSize
-        end
-
-        awayOffset = awayOffset + sectionAwaySize
-        if groupIndex < #groupedEntries then
-            awayOffset = awayOffset + TRACKER_TYPE_GAP
-        end
-    end
-
-    local totalAwaySize = math.max(iconSize, awayOffset)
-    local totalCrossSize = math.max(iconSize, maxCrossSize)
-    local rowWidth, rowHeight
     if horizontalAttach then
-        rowWidth = totalAwaySize
-        rowHeight = totalCrossSize
+        slotRows = math.min(configuredRows, #entries)
+        slotColumns = math.ceil(#entries / slotRows)
+        rowWidth = GetSpanSize(slotColumns, iconSize, iconSpacing)
+        rowHeight = GetSpanSize(slotRows, iconSize, iconSpacing)
     else
-        rowWidth = totalCrossSize
-        rowHeight = totalAwaySize
+        slotColumns = math.min(configuredRows, #entries)
+        slotRows = math.ceil(#entries / slotColumns)
+        rowWidth = GetSpanSize(slotColumns, iconSize, iconSpacing)
+        rowHeight = GetSpanSize(slotRows, iconSize, iconSpacing)
     end
+
     row:SetSize(rowWidth, rowHeight)
 
-    for iconIndex, slot in ipairs(slots) do
-        local entry = slot.entry
+    for iconIndex, entry in ipairs(entries) do
         local icon = self:AcquireIcon(row)
         local _, texture = SafeGetSpellInfo(entry.spellID)
+        local slotX
+        local slotY
+
+        if horizontalAttach then
+            local rowIndex = math.floor((iconIndex - 1) / slotColumns)
+            local columnIndex = (iconIndex - 1) % slotColumns
+            slotX = columnIndex * (iconSize + iconSpacing)
+            slotY = rowIndex * (iconSize + iconSpacing)
+        else
+            local columnIndex = (iconIndex - 1) % slotColumns
+            local rowIndex = math.floor((iconIndex - 1) / slotColumns)
+            slotX = columnIndex * (iconSize + iconSpacing)
+            slotY = rowIndex * (iconSize + iconSpacing)
+        end
 
         icon:SetSize(iconSize, iconSize)
         icon.spellID = entry.spellID
         icon.baseCD = entry.meta.cd
         icon.texture:SetTexture(texture or 134400)
         icon.typeText:SetText("")
+        if icon.cooldown.SetReverse then
+            icon.cooldown:SetReverse(self:IsTrackerReverseCooldownEnabled())
+        end
         if entry.isActive then
-            icon:SetAlpha(1)
+            icon:SetAlpha(0.95)
+            icon.texture:SetVertexColor(0.62, 0.62, 0.62, 1)
             if icon.texture.SetDesaturated then
-                icon.texture:SetDesaturated(false)
+                icon.texture:SetDesaturated(true)
             end
             icon.timeText:SetText(FormatRemaining(entry.remaining))
             icon.cooldown:SetCooldown(entry.endTime - entry.duration, entry.duration)
         else
-            icon:SetAlpha(0.55)
+            icon:SetAlpha(1)
+            icon.texture:SetVertexColor(1, 1, 1, 1)
             if icon.texture.SetDesaturated then
-                icon.texture:SetDesaturated(true)
+                icon.texture:SetDesaturated(false)
             end
             icon.timeText:SetText("")
             icon.cooldown:SetCooldown(0, 0)
@@ -843,17 +1197,20 @@ function PartyOffCD:RenderRow(row, rosterEntry)
         local iconX = 0
         local iconTop = 0
         if attach == "RIGHT" then
-            iconX = slot.away
-            iconTop = slot.cross
+            iconX = slotX
+            iconTop = slotY
         elseif attach == "LEFT" then
-            iconX = rowWidth - iconSize - slot.away
-            iconTop = slot.cross
+            iconX = rowWidth - iconSize - slotX
+            iconTop = slotY
+        elseif attach == "CENTER" then
+            iconX = slotX
+            iconTop = slotY
         elseif attach == "TOP" then
-            iconX = slot.cross
-            iconTop = rowHeight - iconSize - slot.away
+            iconX = slotX
+            iconTop = rowHeight - iconSize - slotY
         else
-            iconX = slot.cross
-            iconTop = slot.away
+            iconX = slotX
+            iconTop = slotY
         end
         icon:SetPoint("TOPLEFT", row, "TOPLEFT", iconX, -iconTop)
 
@@ -1056,9 +1413,18 @@ function PartyOffCD:RenderInterruptRow(row, rosterEntry, entry)
 end
 
 function PartyOffCD:RefreshInterruptBar()
-    if not self.interruptFrame then
+    if not self:IsEnabledForCurrentContext() then
+        if not self.interruptFrame then
+            return
+        end
+        self.interruptFrame:Hide()
+        for _, row in ipairs(self.interruptRows) do
+            row:Hide()
+        end
         return
     end
+
+    self:CreateInterruptFrame()
 
     self:UpdateInterruptFrameStyle()
 
@@ -1072,13 +1438,11 @@ function PartyOffCD:RefreshInterruptBar()
 
     local activeCount = 0
     for _, rosterEntry in ipairs(self.roster) do
-        if self:HasAddon(rosterEntry.key) then
-            local entry = self:GetActiveInterruptEntry(rosterEntry.key)
-            if entry then
-                activeCount = activeCount + 1
-                local row = self:GetInterruptRow(activeCount)
-                self:RenderInterruptRow(row, rosterEntry, entry)
-            end
+        local entry = self:GetActiveInterruptEntry(rosterEntry.key)
+        if entry then
+            activeCount = activeCount + 1
+            local row = self:GetInterruptRow(activeCount)
+            self:RenderInterruptRow(row, rosterEntry, entry)
         end
     end
 
@@ -1108,7 +1472,7 @@ function PartyOffCD:RefreshInterruptBar()
 end
 
 function PartyOffCD:GetMissingBuffEntries()
-    if not IsInGroup() and not IsInRaid() then
+    if not self:HasTrackedPartyMembers() and not IsInRaid() then
         return {}
     end
 
@@ -1327,10 +1691,48 @@ function PartyOffCD:ReleaseMissingBuffIcons()
     wipe(self.missingBuffIcons)
 end
 
+function PartyOffCD:HideAllTrackerFrames()
+    if self.trackerFrame then
+        self.trackerFrame:Hide()
+    end
+    if self.interruptFrame then
+        self.interruptFrame:Hide()
+    end
+    if self.missingBuffFrame then
+        self.missingBuffFrame:Hide()
+    end
+
+    for _, row in ipairs(self.interruptRows) do
+        row:Hide()
+    end
+
+    for _, row in ipairs(self.rows) do
+        if row then
+            self:ReleaseRowIcons(row)
+            row:Hide()
+        end
+    end
+
+    self:ReleaseMissingBuffIcons()
+
+    for _, alert in pairs(self.cooldownAlerts or {}) do
+        if alert then
+            alert:Hide()
+        end
+    end
+end
+
 function PartyOffCD:RefreshMissingBuffFrame()
-    if not self.missingBuffFrame then
+    if not self:IsEnabledForCurrentContext() then
+        if not self.missingBuffFrame then
+            return
+        end
+        self:ReleaseMissingBuffIcons()
+        self.missingBuffFrame:Hide()
         return
     end
+
+    self:CreateMissingBuffFrame()
 
     self:UpdateMissingBuffFrameStyle()
 
@@ -1372,44 +1774,29 @@ end
 function PartyOffCD:RefreshTracker()
     self:PruneState()
 
+    if not self:IsEnabledForCurrentContext() then
+        self:HideAllTrackerFrames()
+        return
+    end
+
+    if not self:HasTrackedPartyMembers() then
+        self:HideAllTrackerFrames()
+        return
+    end
+
     self:BuildRoster()
 
     if #self.roster == 0 then
-        if self.trackerFrame then
-            self.trackerFrame:Hide()
-        end
-        if self.interruptFrame then
-            self.interruptFrame:Hide()
-        end
-        for _, row in ipairs(self.interruptRows) do
-            row:Hide()
-        end
-        -- Rows may be parented to CompactPartyFrames (not trackerFrame), so hide them explicitly
-        for _, row in ipairs(self.rows) do
-            if row then
-                self:ReleaseRowIcons(row)
-                row:Hide()
-            end
-        end
-        -- Missing buffs is independent of the party tracker; refresh it normally
-        self:CreateMissingBuffFrame()
-        self:RefreshMissingBuffFrame()
+        self:HideAllTrackerFrames()
         return
     end
 
     self:CreateTrackerFrame()
-    self:CreateInterruptFrame()
-    self:CreateMissingBuffFrame()
     self.trackerFrame:Show()
 
     for index, entry in ipairs(self.roster) do
         local row = self:GetRow(index)
-        if self:HasAddon(entry.key) then
-            self:RenderRow(row, entry)
-        else
-            self:ReleaseRowIcons(row)
-            row:Hide()
-        end
+        self:RenderRow(row, entry)
     end
 
     for index = (#self.roster + 1), #self.rows do
@@ -1421,4 +1808,3 @@ function PartyOffCD:RefreshTracker()
     self:RefreshInterruptBar()
     self:RefreshMissingBuffFrame()
 end
-

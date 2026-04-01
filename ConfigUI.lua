@@ -13,26 +13,187 @@ local PREFIX = PartyOffCDCore.PREFIX
 local MINIMAP_RADIUS = PartyOffCDCore.MINIMAP_RADIUS
 local MIN_TRACKER_ICON_SCALE = PartyOffCDCore.MIN_TRACKER_ICON_SCALE or 10
 local MAX_TRACKER_ICON_SCALE = PartyOffCDCore.MAX_TRACKER_ICON_SCALE or 100
-local TRACKER_ATTACH_CYCLE = { "LEFT", "RIGHT", "TOP", "BOTTOM" }
+local TRACKER_ATTACH_CYCLE = { "LEFT", "RIGHT", "CENTER", "TOP", "BOTTOM" }
+local TRACKER_GROW_CYCLE = { "LEFT", "RIGHT", "CENTER" }
 local TRACKER_ATTACH_LABELS = {
     LEFT = "Left",
     RIGHT = "Right",
+    CENTER = "Center",
     TOP = "Top",
     BOTTOM = "Bottom",
+}
+local CONTEXT_OPTIONS = {
+    { key = "world", label = "Open World" },
+    { key = "arena", label = "Arena" },
+    { key = "dungeons", label = "Dungeons" },
+    { key = "raid", label = "Raids" },
 }
 
 local DebugPrint = PartyOffCDCore.DebugPrint
 local SafeGetSpellInfo = PartyOffCDCore.SafeGetSpellInfo
 local CreateCheckbox = PartyOffCDCore.CreateCheckbox
 local CreateNumericEditBox = PartyOffCDCore.CreateNumericEditBox
+local sliderControlId = 1
 
-local function GetNextTrackerAttach(currentAttach)
-    for index, attach in ipairs(TRACKER_ATTACH_CYCLE) do
-        if attach == currentAttach then
-            return TRACKER_ATTACH_CYCLE[(index % #TRACKER_ATTACH_CYCLE) + 1]
+local function GetNextCycleValue(currentValue, cycle)
+    for index, value in ipairs(cycle) do
+        if value == currentValue then
+            return cycle[(index % #cycle) + 1]
         end
     end
-    return TRACKER_ATTACH_CYCLE[1]
+    return cycle[1]
+end
+
+local function AddConfigWidget(owner, widget)
+    owner.configRows[#owner.configRows + 1] = widget
+    return widget
+end
+
+local function CreateDivider(parent, width, text)
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:SetSize(width, 18)
+
+    local lineLeft = frame:CreateTexture(nil, "BACKGROUND")
+    lineLeft:SetPoint("LEFT", frame, "LEFT", 0, 0)
+    lineLeft:SetSize(18, 1)
+    lineLeft:SetColorTexture(0.95, 0.82, 0.2, 0.85)
+
+    local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    label:SetPoint("LEFT", lineLeft, "RIGHT", 6, 0)
+    label:SetText(text or "")
+    frame.label = label
+
+    local lineRight = frame:CreateTexture(nil, "BACKGROUND")
+    lineRight:SetPoint("LEFT", label, "RIGHT", 6, 0)
+    lineRight:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+    lineRight:SetHeight(1)
+    lineRight:SetColorTexture(0.25, 0.25, 0.28, 0.9)
+
+    return frame
+end
+
+local function CreateSliderControl(parent, labelText, minValue, maxValue, step, width, getValue, setValue, formatter)
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:SetSize(width, 52)
+
+    local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    label:SetText(labelText)
+    frame.label = label
+
+    local valueText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    valueText:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    frame.valueText = valueText
+
+    local sliderName = "PartyOffCDConfigSlider" .. sliderControlId
+    sliderControlId = sliderControlId + 1
+
+    local slider = CreateFrame("Slider", sliderName, frame, "OptionsSliderTemplate")
+    slider:SetOrientation("HORIZONTAL")
+    slider:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -18)
+    slider:SetWidth(width)
+    slider:SetHeight(20)
+    slider:SetMinMaxValues(minValue, maxValue)
+    slider:SetValueStep(step or 1)
+    if slider.SetObeyStepOnDrag then
+        slider:SetObeyStepOnDrag(true)
+    end
+
+    local low = _G[sliderName .. "Low"]
+    local high = _G[sliderName .. "High"]
+    local text = _G[sliderName .. "Text"]
+    if low then
+        low:SetText(tostring(minValue))
+    end
+    if high then
+        high:SetText(tostring(maxValue))
+    end
+    if text then
+        text:SetText("")
+        text:Hide()
+    end
+
+    local function ClampValue(value)
+        value = tonumber(value) or minValue
+        if value < minValue then
+            value = minValue
+        elseif value > maxValue then
+            value = maxValue
+        end
+        if step and step > 0 then
+            value = math.floor((value / step) + 0.5) * step
+            if value < minValue then
+                value = minValue
+            elseif value > maxValue then
+                value = maxValue
+            end
+        end
+        return value
+    end
+
+    local function RefreshVisual(value)
+        value = ClampValue(value)
+        valueText:SetText(formatter and formatter(value) or tostring(value))
+    end
+
+    slider:SetScript("OnValueChanged", function(_, value, userInput)
+        value = ClampValue(value)
+        RefreshVisual(value)
+        if userInput ~= nil and not userInput then
+            return
+        end
+        if setValue then
+            setValue(value)
+        end
+    end)
+
+    local initialValue = ClampValue(getValue and getValue() or minValue)
+    slider:SetValue(initialValue)
+    RefreshVisual(initialValue)
+    frame.slider = slider
+
+    return frame
+end
+
+local function RenderContextSettings(owner, content, y)
+    local header = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    header:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    header:SetText("Enable Addon In")
+    AddConfigWidget(owner, header)
+    y = y - 22
+
+    local currentContext = owner.GetCurrentContextLabel and owner:GetCurrentContextLabel() or "Open World"
+    local isEnabled = owner.IsEnabledForCurrentContext and owner:IsEnabledForCurrentContext()
+
+    local status = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    status:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    status:SetText(string.format("Current context: %s (%s)", currentContext, isEnabled and "enabled" or "disabled"))
+    if isEnabled then
+        status:SetTextColor(0.55, 1, 0.55)
+    else
+        status:SetTextColor(1, 0.45, 0.45)
+    end
+    AddConfigWidget(owner, status)
+    y = y - 24
+
+    for index, option in ipairs(CONTEXT_OPTIONS) do
+        local checkbox = CreateCheckbox(nil, content, option.label)
+        checkbox:SetPoint("TOPLEFT", content, "TOPLEFT", ((index - 1) * 108), y)
+        checkbox:SetChecked(owner:IsContextEnabled(option.key))
+        checkbox:SetScript("OnClick", function(selfCheck)
+            PartyOffCD:SetContextEnabled(option.key, selfCheck:GetChecked())
+        end)
+        AddConfigWidget(owner, checkbox)
+    end
+    y = y - 28
+
+    local hint = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    hint:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    hint:SetText("Disabling a context hides cooldowns, interrupts, and missing buffs there.")
+    AddConfigWidget(owner, hint)
+    y = y - 24
+
+    return y
 end
 
 function PartyOffCD:CreateConfigPanel()
@@ -41,7 +202,7 @@ function PartyOffCD:CreateConfigPanel()
     end
 
     local frame = CreateFrame("Frame", "PartyOffCDConfigPanel", UIParent)
-    frame:SetSize(500, 470)
+    frame:SetSize(620, 560)
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
@@ -72,7 +233,7 @@ function PartyOffCD:CreateConfigPanel()
 
     local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -34)
-    subtitle:SetText("Configure cooldowns, interrupts, and missing buffs.")
+    subtitle:SetText("MiniCC-style layout controls, cooldown catalog, interrupts, and missing buffs.")
 
     local tabDefs = {
         { id = "cds", label = "Cooldowns" },
@@ -106,7 +267,7 @@ function PartyOffCD:CreateConfigPanel()
     scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -32, 12)
 
     local content = CreateFrame("Frame", nil, scrollFrame)
-    content:SetSize(440, 1)
+    content:SetSize(560, 1)
     scrollFrame:SetScrollChild(content)
 
     frame.scrollFrame = scrollFrame
@@ -144,15 +305,18 @@ function PartyOffCD:RefreshConfigPanel()
         tab:SetAlpha(isActive and 1 or 0.7)
     end
 
+    y = RenderContextSettings(self, content, y)
+    y = y - 4
+
     if activeTab == "interrupts" then
         if frame.instructions then
-            frame.instructions:SetText("Interrupt window controls.")
+            frame.instructions:SetText("Choose where the addon runs, then adjust the interrupt window.")
         end
 
         local header = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         header:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
         header:SetText("Interrupts")
-        self.configRows[#self.configRows + 1] = header
+        AddConfigWidget(self, header)
         y = y - 26
 
         local showHide = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
@@ -163,7 +327,7 @@ function PartyOffCD:RefreshConfigPanel()
             PartyOffCD:SetInterruptHidden(not PartyOffCD.db.interruptHidden)
             PartyOffCD:RefreshConfigPanel()
         end)
-        self.configRows[#self.configRows + 1] = showHide
+        AddConfigWidget(self, showHide)
 
         local lock = CreateCheckbox(nil, content, "Lock")
         lock:SetPoint("LEFT", showHide, "RIGHT", 14, 0)
@@ -171,27 +335,27 @@ function PartyOffCD:RefreshConfigPanel()
         lock:SetScript("OnClick", function(selfCheck)
             PartyOffCD:SetInterruptLocked(selfCheck:GetChecked())
         end)
-        self.configRows[#self.configRows + 1] = lock
+        AddConfigWidget(self, lock)
         y = y - 24
 
         local hint = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
         hint:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
         hint:SetText("Locked: no frame background/title, only interrupt bars.")
-        self.configRows[#self.configRows + 1] = hint
+        AddConfigWidget(self, hint)
 
-        content:SetHeight(88)
+        content:SetHeight(math.max(1, -y + 34))
         return
     end
 
     if activeTab == "buffs" then
         if frame.instructions then
-            frame.instructions:SetText("Missing buffs window controls.")
+            frame.instructions:SetText("Choose where the addon runs, then adjust the missing buffs window.")
         end
 
         local header = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         header:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
         header:SetText("Missing Buffs")
-        self.configRows[#self.configRows + 1] = header
+        AddConfigWidget(self, header)
         y = y - 26
 
         local showHide = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
@@ -202,7 +366,7 @@ function PartyOffCD:RefreshConfigPanel()
             PartyOffCD:SetMissingBuffsHidden(not PartyOffCD.db.missingBuffsHidden)
             PartyOffCD:RefreshConfigPanel()
         end)
-        self.configRows[#self.configRows + 1] = showHide
+        AddConfigWidget(self, showHide)
 
         local lock = CreateCheckbox(nil, content, "Lock")
         lock:SetPoint("LEFT", showHide, "RIGHT", 14, 0)
@@ -210,87 +374,192 @@ function PartyOffCD:RefreshConfigPanel()
         lock:SetScript("OnClick", function(selfCheck)
             PartyOffCD:SetMissingBuffsLocked(selfCheck:GetChecked())
         end)
-        self.configRows[#self.configRows + 1] = lock
+        AddConfigWidget(self, lock)
         y = y - 24
 
         local hint = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
         hint:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
         hint:SetText("Locked: no frame background/title, only buff icons + MISSING.")
-        self.configRows[#self.configRows + 1] = hint
+        AddConfigWidget(self, hint)
 
-        content:SetHeight(88)
+        content:SetHeight(math.max(1, -y + 34))
         return
     end
 
     if frame.instructions then
-        frame.instructions:SetText("Use + to add spells. Layout is automatic by attach side. Delete removes only your custom spells; base spells can only be disabled.")
+        frame.instructions:SetText("Configure the tracker like MiniCC: grow direction, rows, offsets, size, visible CD types, then manage the spell catalog below.")
     end
 
-    local layoutHeader = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    layoutHeader:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
-    layoutHeader:SetText("Tracker Layout")
-    self.configRows[#self.configRows + 1] = layoutHeader
+    local layoutDivider = CreateDivider(content, 540, "Tracker Display")
+    layoutDivider:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    AddConfigWidget(self, layoutDivider)
+    y = y - 26
+
+    local excludeSelf = CreateCheckbox(nil, content, "Exclude Self")
+    excludeSelf:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    excludeSelf:SetChecked(self:IsTrackerExcludeSelfEnabled())
+    excludeSelf:SetScript("OnClick", function(selfCheck)
+        if PartyOffCD:SetTrackerExcludeSelfEnabled(selfCheck:GetChecked()) then
+            PartyOffCD:RefreshTracker()
+        end
+    end)
+    AddConfigWidget(self, excludeSelf)
+
+    local tooltips = CreateCheckbox(nil, content, "Show Tooltips")
+    tooltips:SetPoint("LEFT", excludeSelf, "RIGHT", 120, 0)
+    tooltips:SetChecked(self:IsTrackerTooltipsEnabled())
+    tooltips:SetScript("OnClick", function(selfCheck)
+        if PartyOffCD:SetTrackerTooltipsEnabled(selfCheck:GetChecked()) then
+            PartyOffCD:RefreshTracker()
+        end
+    end)
+    AddConfigWidget(self, tooltips)
+
+    local reverseSwipe = CreateCheckbox(nil, content, "Reverse Swipe")
+    reverseSwipe:SetPoint("LEFT", tooltips, "RIGHT", 120, 0)
+    reverseSwipe:SetChecked(self:IsTrackerReverseCooldownEnabled())
+    reverseSwipe:SetScript("OnClick", function(selfCheck)
+        if PartyOffCD:SetTrackerReverseCooldownEnabled(selfCheck:GetChecked()) then
+            PartyOffCD:RefreshTracker()
+        end
+    end)
+    AddConfigWidget(self, reverseSwipe)
     y = y - 24
 
-    local attachButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-    attachButton:SetSize(138, 20)
-    attachButton:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
-    attachButton:SetText("Attach: " .. (TRACKER_ATTACH_LABELS[self:GetTrackerAttach()] or "Left"))
-    attachButton:SetScript("OnClick", function()
-        local nextAttach = GetNextTrackerAttach(PartyOffCD:GetTrackerAttach())
+    local showOffensive = CreateCheckbox(nil, content, "Offensive CDs")
+    showOffensive:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    showOffensive:SetChecked(self:IsTrackerTypeVisible("OFF"))
+    showOffensive:SetScript("OnClick", function(selfCheck)
+        if PartyOffCD:SetTrackerTypeVisible("OFF", selfCheck:GetChecked()) then
+            PartyOffCD:RefreshTracker()
+        end
+    end)
+    AddConfigWidget(self, showOffensive)
+
+    local showDefensive = CreateCheckbox(nil, content, "Defensive CDs")
+    showDefensive:SetPoint("LEFT", showOffensive, "RIGHT", 120, 0)
+    showDefensive:SetChecked(self:IsTrackerTypeVisible("DEF"))
+    showDefensive:SetScript("OnClick", function(selfCheck)
+        if PartyOffCD:SetTrackerTypeVisible("DEF", selfCheck:GetChecked()) then
+            PartyOffCD:RefreshTracker()
+        end
+    end)
+    AddConfigWidget(self, showDefensive)
+    y = y - 28
+
+    local growButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    growButton:SetSize(150, 22)
+    growButton:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    growButton:SetText("Grow: " .. (TRACKER_ATTACH_LABELS[self:GetTrackerAttach()] or "Left"))
+    growButton:SetScript("OnClick", function()
+        local nextAttach = GetNextCycleValue(PartyOffCD:GetTrackerAttach(), TRACKER_GROW_CYCLE)
         PartyOffCD:SetTrackerAttach(nextAttach)
         PartyOffCD:RefreshConfigPanel()
         PartyOffCD:RefreshTracker()
     end)
-    self.configRows[#self.configRows + 1] = attachButton
+    AddConfigWidget(self, growButton)
 
-    local currentAttach = self:GetTrackerAttach()
-    local layoutHint = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    layoutHint:SetPoint("LEFT", attachButton, "RIGHT", 12, 0)
-    if currentAttach == "LEFT" or currentAttach == "RIGHT" then
-        layoutHint:SetText("Auto layout: single row")
-    else
-        layoutHint:SetText("Auto layout: wraps to unit frame width")
-    end
-    self.configRows[#self.configRows + 1] = layoutHint
-    y = y - 28
+    local growHint = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    growHint:SetPoint("LEFT", growButton, "RIGHT", 12, 0)
+    growHint:SetText("Default is Left, matching the MiniCC-style anchor.")
+    AddConfigWidget(self, growHint)
+    y = y - 36
 
-    local sizeLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    sizeLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
-    sizeLabel:SetText("Icon Size %")
-    self.configRows[#self.configRows + 1] = sizeLabel
+    local sliderWidth = 250
 
-    local sizeMinus = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-    sizeMinus:SetSize(20, 20)
-    sizeMinus:SetPoint("LEFT", sizeLabel, "RIGHT", 8, 0)
-    sizeMinus:SetText("-")
-    sizeMinus:SetScript("OnClick", function()
-        PartyOffCD:SetTrackerIconScale(PartyOffCD:GetTrackerIconScale() - 5)
-        PartyOffCD:RefreshConfigPanel()
-        PartyOffCD:RefreshTracker()
-    end)
-    self.configRows[#self.configRows + 1] = sizeMinus
+    local iconSizeSlider = CreateSliderControl(
+        content,
+        "Icon Size",
+        10,
+        60,
+        1,
+        sliderWidth,
+        function() return PartyOffCD:GetTrackerConfiguredIconSize() end,
+        function(value)
+            if PartyOffCD:SetTrackerConfiguredIconSize(value) then
+                PartyOffCD:RefreshTracker()
+            end
+        end,
+        function(value) return string.format("%d px", value) end
+    )
+    iconSizeSlider:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    AddConfigWidget(self, iconSizeSlider)
 
-    local sizeValue = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    sizeValue:SetPoint("LEFT", sizeMinus, "RIGHT", 7, 0)
-    sizeValue:SetText(string.format("%d%%", self:GetTrackerIconScale()))
-    self.configRows[#self.configRows + 1] = sizeValue
+    local maxIconsSlider = CreateSliderControl(
+        content,
+        "Max Icons",
+        1,
+        12,
+        1,
+        sliderWidth,
+        function() return PartyOffCD:GetTrackerMaxIcons() end,
+        function(value)
+            if PartyOffCD:SetTrackerMaxIcons(value) then
+                PartyOffCD:RefreshTracker()
+            end
+        end
+    )
+    maxIconsSlider:SetPoint("TOPLEFT", content, "TOPLEFT", 276, y)
+    AddConfigWidget(self, maxIconsSlider)
+    y = y - 52
 
-    local sizePlus = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-    sizePlus:SetSize(20, 20)
-    sizePlus:SetPoint("LEFT", sizeValue, "RIGHT", 7, 0)
-    sizePlus:SetText("+")
-    sizePlus:SetScript("OnClick", function()
-        PartyOffCD:SetTrackerIconScale(PartyOffCD:GetTrackerIconScale() + 5)
-        PartyOffCD:RefreshConfigPanel()
-        PartyOffCD:RefreshTracker()
-    end)
-    self.configRows[#self.configRows + 1] = sizePlus
+    local rowsSlider = CreateSliderControl(
+        content,
+        "Rows",
+        1,
+        3,
+        1,
+        sliderWidth,
+        function() return PartyOffCD:GetTrackerRows() end,
+        function(value)
+            if PartyOffCD:SetTrackerRows(value) then
+                PartyOffCD:RefreshTracker()
+            end
+        end
+    )
+    rowsSlider:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    AddConfigWidget(self, rowsSlider)
 
-    local currentScale = self:GetTrackerIconScale()
-    sizeMinus:SetEnabled(currentScale > MIN_TRACKER_ICON_SCALE)
-    sizePlus:SetEnabled(currentScale < MAX_TRACKER_ICON_SCALE)
-    y = y - 28
+    local offsetXSlider = CreateSliderControl(
+        content,
+        "Offset X",
+        -250,
+        250,
+        1,
+        sliderWidth,
+        function() return PartyOffCD:GetTrackerOffsetX() end,
+        function(value)
+            if PartyOffCD:SetTrackerOffsetX(value) then
+                PartyOffCD:RefreshTracker()
+            end
+        end
+    )
+    offsetXSlider:SetPoint("TOPLEFT", content, "TOPLEFT", 276, y)
+    AddConfigWidget(self, offsetXSlider)
+    y = y - 52
+
+    local offsetYSlider = CreateSliderControl(
+        content,
+        "Offset Y",
+        -250,
+        250,
+        1,
+        sliderWidth,
+        function() return PartyOffCD:GetTrackerOffsetY() end,
+        function(value)
+            if PartyOffCD:SetTrackerOffsetY(value) then
+                PartyOffCD:RefreshTracker()
+            end
+        end
+    )
+    offsetYSlider:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    AddConfigWidget(self, offsetYSlider)
+    y = y - 62
+
+    local catalogDivider = CreateDivider(content, 540, "Spell Catalog")
+    catalogDivider:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+    AddConfigWidget(self, catalogDivider)
+    y = y - 24
 
     local classBuckets = {}
     local classLookup = {}
@@ -336,8 +605,8 @@ function PartyOffCD:RefreshConfigPanel()
 
     local panelTopY = y
     local leftX = 0
-    local leftWidth = 112
-    local rightX = 122
+    local leftWidth = 124
+    local rightX = 138
 
     local classesHeader = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     classesHeader:SetPoint("TOPLEFT", content, "TOPLEFT", leftX, panelTopY)
@@ -429,7 +698,7 @@ function PartyOffCD:RefreshConfigPanel()
 
     local addButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     addButton:SetSize(76, 20)
-    addButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 114, rightY + 1)
+    addButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 158, rightY + 1)
     addButton:SetText(self.classAddEditorState[selectedClassToken] and "Close" or "Add New")
     addButton:SetScript("OnClick", function()
         PartyOffCD.classAddEditorState[selectedClassToken] = not PartyOffCD.classAddEditorState[selectedClassToken]
@@ -450,7 +719,7 @@ function PartyOffCD:RefreshConfigPanel()
         self.configRows[#self.configRows + 1] = spellIDLabel
 
         local cdBox = CreateNumericEditBox(nil, content, 40, 5)
-        cdBox:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 94, rightY)
+        cdBox:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 106, rightY)
         cdBox:SetText("90")
         self.configRows[#self.configRows + 1] = cdBox
 
@@ -488,7 +757,7 @@ function PartyOffCD:RefreshConfigPanel()
 
         local saveNewButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
         saveNewButton:SetSize(50, 18)
-        saveNewButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 168, rightY + 2)
+        saveNewButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 220, rightY + 2)
         saveNewButton:SetText("Save")
         saveNewButton:SetScript("OnClick", function()
             local spellType = offCheck:GetChecked() and "OFF" or "DEF"
@@ -526,7 +795,7 @@ function PartyOffCD:RefreshConfigPanel()
         local canDeleteCustom = not BASE_SPELLS[spellID] and self.db.customSpells and self.db.customSpells[spellID]
         local customSuffix = meta.custom and ", custom" or ""
         local overrideSuffix = playerOverride and ", override" or ""
-        label:SetWidth(132)
+        label:SetWidth(230)
         label:SetJustifyH("LEFT")
         label:SetText(string.format("%s (%ss, id %d%s%s)", spellName or ("Spell " .. spellID), meta.cd, spellID, customSuffix, overrideSuffix))
         if self.db.classEnabled[selectedClassToken] == false then
@@ -538,19 +807,19 @@ function PartyOffCD:RefreshConfigPanel()
 
         local editButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
         editButton:SetSize(36, 18)
-        editButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 178, rightY + 1)
+        editButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 286, rightY + 1)
         editButton:SetText("Edit")
         self.configRows[#self.configRows + 1] = editButton
 
         local editBox = CreateNumericEditBox(nil, content, 30, 5)
-        editBox:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 178, rightY)
+        editBox:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 286, rightY)
         editBox:SetText(tostring(meta.cd))
         editBox:Hide()
         self.configRows[#self.configRows + 1] = editBox
 
         local saveButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
         saveButton:SetSize(36, 18)
-        saveButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 216, rightY + 1)
+        saveButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 326, rightY + 1)
         saveButton:SetText("Save")
         saveButton:Hide()
         self.configRows[#self.configRows + 1] = saveButton
@@ -559,7 +828,7 @@ function PartyOffCD:RefreshConfigPanel()
         if canDeleteCustom then
             deleteButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
             deleteButton:SetSize(50, 18)
-            deleteButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 256, rightY + 1)
+            deleteButton:SetPoint("TOPLEFT", content, "TOPLEFT", rightX + 368, rightY + 1)
             deleteButton:SetText("Delete")
             deleteButton:SetScript("OnClick", function()
                 PartyOffCD:DeleteCustomSpell(spellID)
@@ -640,32 +909,38 @@ function PartyOffCD:CreateMinimapButton()
     end
 
     local button = CreateFrame("Button", "PartyOffCDMinimapButton", Minimap)
-    button:SetSize(30, 30)
+    button:SetSize(31, 31)
     button:SetFrameStrata("MEDIUM")
     button:SetMovable(true)
     button:EnableMouse(true)
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:RegisterForDrag("LeftButton")
+    button:SetHitRectInsets(4, 4, 4, 4)
 
     local bg = button:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    bg:SetColorTexture(0.05, 0.05, 0.05, 0.85)
+    bg:SetTexture("Interface\\Minimap\\MiniMap-TrackingBackground")
     button.bg = bg
 
-    local border = button:CreateTexture(nil, "BORDER")
-    border:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-    border:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
-    border:SetHeight(1)
-    border:SetColorTexture(0.95, 0.82, 0.2, 0.95)
-    button.border = border
-
     local texture = button:CreateTexture(nil, "ARTWORK")
-    texture:SetSize(18, 18)
-    texture:SetPoint("CENTER", button, "CENTER", 0, 0)
+    texture:SetSize(20, 20)
+    texture:SetPoint("CENTER", button, "CENTER", 0, 1)
     texture:SetTexture(136116)
+    if texture.SetMask then
+        texture:SetMask("Interface\\CharacterFrame\\TempPortraitAlphaMaskSmallCircle")
+    end
     button.icon = texture
 
-    button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    local border = button:CreateTexture(nil, "OVERLAY")
+    border:SetAllPoints()
+    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    button.border = border
+
+    local highlight = button:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    highlight:SetBlendMode("ADD")
+    button.highlight = highlight
 
     button:SetScript("OnClick", function()
         PartyOffCD:ToggleConfigPanel()
@@ -725,8 +1000,11 @@ function PartyOffCD:PrintConfig()
     local inGroup = (IsInGroup() or IsInRaid()) and "yes" or "no"
     local configShown = (self.configPanel and self.configPanel:IsShown()) and "shown" or "hidden"
     local minimapShown = "shown"
+    local contextLabel = self.GetCurrentContextLabel and self:GetCurrentContextLabel() or "Open World"
+    local contextEnabled = (self.IsEnabledForCurrentContext and self:IsEnabledForCurrentContext()) and "enabled" or "disabled"
 
     DebugPrint("Prefix: " .. PREFIX .. " | Channel: " .. channel .. " | InGroup: " .. inGroup)
+    DebugPrint("Context: " .. contextLabel .. " | Addon: " .. contextEnabled)
     DebugPrint("Active spells: " .. tostring(self:GetEnabledSpellCount()) .. "/" .. tostring(self:GetSupportedSpellCount()))
     DebugPrint("Config: " .. configShown .. " | Minimap: " .. minimapShown)
     DebugPrint("Commands: /pocd use <spellID>, /pocd timer <spellID> <sec>, /pocd test, /pocd config, /pocd buffs, /pocd interrupts")

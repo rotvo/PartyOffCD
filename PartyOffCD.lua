@@ -15,7 +15,7 @@ local MAX_TRACKED_ROWS = 5
 local MAX_TRACKER_COLUMNS = 8
 local MAX_VERTICAL_TRACKER_COLUMNS = 4
 local MIN_TRACKER_ICON_SCALE = 10
-local MAX_TRACKER_ICON_SCALE = 100
+local MAX_TRACKER_ICON_SCALE = 200
 local ICON_SIZE = 30
 local ICON_SPACING = 3
 local INTERRUPT_BAR_WIDTH = 190
@@ -24,6 +24,12 @@ local INTERRUPT_ICON_SIZE = 18
 local FALLBACK_X = 210
 local FALLBACK_Y = 120
 local MINIMAP_RADIUS = 96
+local COMBAT_LOG_TRACKED_SUBEVENTS = {
+    SPELL_CAST_SUCCESS = true,
+    SPELL_AURA_APPLIED = true,
+    SPELL_AURA_REFRESH = true,
+    SPELL_INTERRUPT = true,
+}
 
 local SPELL_TYPES = { "OFF", "DEF", "INT" }
 local DB_DEFAULTS = assert(
@@ -50,6 +56,11 @@ PartyOffCD.lastRealtimeSync = 0
 PartyOffCD.lastLocalReport = {}
 PartyOffCD.senderSpecIDs = {}
 PartyOffCD.addonUsers = {}
+PartyOffCD.partyCastFrames = {}
+PartyOffCD.specInspectorBound = false
+PartyOffCD.talentTrackerBound = false
+PartyOffCD.cooldownAlerts = {}
+PartyOffCD.specInspectorInitialized = false
 
 local function DebugPrint(message)
     print("|cff33ff99PartyOffCD|r: " .. tostring(message))
@@ -122,6 +133,22 @@ local function GetUnitSpecID(unit)
             return specID
         end
         return nil
+    end
+
+    local talentTracker = PartyOffCDCore and PartyOffCDCore.TalentTracker
+    if talentTracker and talentTracker.GetUnitSpecID then
+        local trackedSpecID = talentTracker:GetUnitSpecID(unit)
+        if trackedSpecID and trackedSpecID > 0 then
+            return trackedSpecID
+        end
+    end
+
+    local specInspector = PartyOffCDCore and PartyOffCDCore.SpecInspector
+    if specInspector and specInspector.GetUnitSpecID then
+        local inspectSpecID = specInspector:GetUnitSpecID(unit)
+        if inspectSpecID and inspectSpecID > 0 then
+            return inspectSpecID
+        end
     end
 
     if GetInspectSpecialization then
@@ -272,6 +299,123 @@ function PartyOffCD:GetCurrentPlayerSpecID()
     return nil
 end
 
+function PartyOffCD:GetCurrentContext()
+    local inInstance, instanceType = IsInInstance()
+    if not inInstance then
+        return "world"
+    end
+
+    if instanceType == "arena" then
+        return "arena"
+    end
+
+    if instanceType == "raid" or IsInRaid() then
+        return "raid"
+    end
+
+    return "dungeons"
+end
+
+function PartyOffCD:GetCurrentContextLabel()
+    local context = self:GetCurrentContext()
+    if context == "arena" then
+        return "Arena"
+    end
+    if context == "dungeons" then
+        return "Dungeons"
+    end
+    if context == "raid" then
+        return "Raids"
+    end
+    return "Open World"
+end
+
+function PartyOffCD:IsContextEnabled(contextKey)
+    local defaults = DB_DEFAULTS.enabledContexts or {}
+    local contexts = (self.db and self.db.enabledContexts) or defaults
+    local value = contexts and contexts[contextKey]
+    if value == nil then
+        value = defaults[contextKey]
+    end
+    return value ~= false
+end
+
+function PartyOffCD:IsEnabledForCurrentContext()
+    return self:IsContextEnabled(self:GetCurrentContext())
+end
+
+function PartyOffCD:HasTrackedPartyMembers()
+    if IsInRaid() then
+        return false
+    end
+
+    for index = 1, MAX_TRACKED_ROWS - 1 do
+        if UnitExists("party" .. index) then
+            return true
+        end
+    end
+
+    return false
+end
+
+function PartyOffCD:EnsureSpecInspector()
+    if self.specInspectorInitialized or not self:HasTrackedPartyMembers() then
+        return
+    end
+
+    local specInspector = PartyOffCDCore and PartyOffCDCore.SpecInspector
+    if not (specInspector and specInspector.Init) then
+        return
+    end
+
+    specInspector:Init(self.db)
+    self.specInspectorInitialized = true
+
+    if not self.specInspectorBound and specInspector.RegisterCallback then
+        specInspector:RegisterCallback(function()
+            PartyOffCD:BuildRoster()
+            PartyOffCD:RefreshTracker()
+        end)
+        self.specInspectorBound = true
+    end
+end
+
+function PartyOffCD:SetContextEnabled(contextKey, enabled)
+    local defaults = DB_DEFAULTS.enabledContexts or {}
+    if defaults[contextKey] == nil or not self.db then
+        return false
+    end
+
+    self.db.enabledContexts = self.db.enabledContexts or CopyDefaults({}, defaults)
+
+    local nextValue = enabled and true or false
+    if self.db.enabledContexts[contextKey] == nextValue then
+        return false
+    end
+
+    self.db.enabledContexts[contextKey] = nextValue
+    self:RefreshPartySpellcastWatchers()
+    if self:IsEnabledForCurrentContext() then
+        self:RequestGroupOverrides()
+        self:BroadcastLocalOverrides(true)
+    end
+    self:RefreshConfigPanel()
+    self:RefreshTracker()
+    return true
+end
+
+function PartyOffCD:HandleContextChanged()
+    self:EnsureSpecInspector()
+    self:BuildRoster()
+    self:RefreshPartySpellcastWatchers()
+    if self:IsEnabledForCurrentContext() then
+        self:RequestGroupOverrides()
+        self:BroadcastLocalOverrides()
+    end
+    self:RefreshConfigPanel()
+    self:RefreshTracker()
+end
+
 function PartyOffCD:IsSelfSender(sender)
     local key = NormalizeName(sender)
     if not key then
@@ -403,6 +547,10 @@ function PartyOffCD:GetLocalCooldownRemaining(spellID)
 end
 
 function PartyOffCD:StartCooldown(senderKey, spellID, senderTime)
+    if not self:IsEnabledForCurrentContext() then
+        return false
+    end
+
     senderKey = self:ResolveSenderKey(senderKey)
     local meta = self:GetEffectiveMeta(senderKey, spellID)
     if not meta or not self:IsSpellEnabled(spellID) then
@@ -429,6 +577,10 @@ function PartyOffCD:StartCooldown(senderKey, spellID, senderTime)
 end
 
 function PartyOffCD:SetRemainingCooldown(senderKey, spellID, remaining, skipSend)
+    if not self:IsEnabledForCurrentContext() then
+        return false
+    end
+
     senderKey = self:ResolveSenderKey(senderKey)
     remaining = tonumber(remaining)
     if not senderKey or not remaining then
@@ -475,9 +627,84 @@ function PartyOffCD:CanReportLocalUse(spellID)
     return true, 0
 end
 
+function PartyOffCD:HandleObservedUnitSpellcast(unit, spellID, senderTime)
+    spellID = tonumber(spellID)
+    if not self:IsEnabledForCurrentContext() or not spellID or not unit or not UnitExists(unit) then
+        return false
+    end
+
+    local fullName = GetUnitFullName(unit)
+    local shortName = UnitName(unit)
+    local sender = fullName or shortName
+    if not sender then
+        return false
+    end
+
+    return self:HandleObservedSenderSpellcast(sender, spellID, senderTime)
+end
+
+function PartyOffCD:HandleObservedSenderSpellcast(sender, spellID, senderTime)
+    spellID = tonumber(spellID)
+    if not self:IsEnabledForCurrentContext() or not spellID or not sender then
+        return false
+    end
+
+    local baseMeta = self:GetSpellMeta(spellID)
+    if not baseMeta or not self:IsSpellEnabled(spellID) then
+        return false
+    end
+
+    local senderKey = self:ResolveSenderKey(sender)
+    if not senderKey then
+        return false
+    end
+
+    local unit = self:GetSenderUnit(senderKey)
+    if unit and not UnitExists(unit) then
+        unit = nil
+    end
+
+    local effectiveMeta = self:GetEffectiveMeta(senderKey, spellID)
+    if not effectiveMeta then
+        return false
+    end
+
+    local classToken = unit and select(2, UnitClass(unit)) or self:GetSenderClass(senderKey)
+    if not classToken or (effectiveMeta.class and effectiveMeta.class ~= classToken) then
+        return false
+    end
+
+    local specID = (unit and GetUnitSpecID(unit)) or self:GetSenderSpecID(senderKey)
+    local inferredSpecID = self:GetSingleSpecIDForMeta(effectiveMeta)
+    if inferredSpecID and inferredSpecID > 0 then
+        specID = inferredSpecID
+        self:UpdateSenderSpecID(senderKey, inferredSpecID)
+    elseif specID and specID > 0 then
+        self:UpdateSenderSpecID(senderKey, specID)
+    end
+
+    if not self:DoesMetaMatchUnit(effectiveMeta, classToken, specID, unit) then
+        return false
+    end
+
+    if self:ShouldIgnoreDuplicate(senderKey, spellID) then
+        return false
+    end
+
+    if not self:StartCooldown(senderKey, spellID, senderTime or GetTime()) then
+        return false
+    end
+
+    if effectiveMeta.type ~= "INT" then
+        self:ShowCooldownUseAlert(senderKey, spellID)
+    end
+    self:RefreshTracker()
+    return true
+end
+
 function PartyOffCD:HandleLocalSpellcastSucceeded(spellID)
     spellID = tonumber(spellID)
-    if not spellID or not self:GetSpellMeta(spellID) or not self:IsSpellEnabled(spellID) then
+    if not self:IsEnabledForCurrentContext() or not spellID or not self:GetSpellMeta(spellID) or not self:IsSpellEnabled(spellID) then
         return
     end
 
@@ -488,10 +715,59 @@ function PartyOffCD:HandleLocalSpellcastSucceeded(spellID)
     end
 
     self.lastLocalReport[spellID] = now
-    self:ReportSpellUse(spellID, true)
+    if self:HandleObservedUnitSpellcast("player", spellID, now) then
+        self:SendUseMessage(spellID)
+    end
+end
+
+function PartyOffCD:HandlePartySpellcastSucceeded(unit, spellID)
+    self:HandleObservedUnitSpellcast(unit, spellID, GetTime())
+end
+
+function PartyOffCD:HandleCombatLogEvent()
+    if not self:IsEnabledForCurrentContext() then
+        return
+    end
+
+    local timestamp, subevent, _, _, sourceName, _, _, _, _, _, _, spellID = CombatLogGetCurrentEventInfo()
+    if not COMBAT_LOG_TRACKED_SUBEVENTS[subevent] or not sourceName or not spellID then
+        return
+    end
+
+    if not self:GetSpellMeta(spellID) or not self:IsSpellEnabled(spellID) then
+        return
+    end
+
+    self:HandleObservedSenderSpellcast(sourceName, spellID, timestamp or GetTime())
+end
+
+function PartyOffCD:RefreshPartySpellcastWatchers()
+    local shouldWatchParty = self:IsEnabledForCurrentContext() and self:HasTrackedPartyMembers()
+
+    for index = 1, MAX_TRACKED_ROWS - 1 do
+        local unit = "party" .. index
+        local frame = self.partyCastFrames[unit]
+
+        if not frame then
+            frame = CreateFrame("Frame")
+            frame:SetScript("OnEvent", function(_, _, eventUnit, _, observedSpellID)
+                PartyOffCD:HandlePartySpellcastSucceeded(eventUnit or unit, observedSpellID)
+            end)
+            self.partyCastFrames[unit] = frame
+        end
+
+        frame:UnregisterAllEvents()
+        if shouldWatchParty then
+            frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", unit)
+        end
+    end
 end
 
 function PartyOffCD:SyncLocalRealCooldowns()
+    if not self:IsEnabledForCurrentContext() then
+        return
+    end
+
     local playerKey = self:GetPlayerCanonical()
     if not playerKey or not self.cooldowns[playerKey] then
         return
@@ -532,6 +808,13 @@ function PartyOffCD:ReportSpellUse(spellID, silent)
         return
     end
 
+    if not self:IsEnabledForCurrentContext() then
+        if not silent then
+            DebugPrint("The addon is disabled in the current context.")
+        end
+        return
+    end
+
     if not self:IsSpellEnabled(spellID) then
         if not silent then
             DebugPrint("That spell is disabled in configuration.")
@@ -565,16 +848,28 @@ function PartyOffCD:Initialize()
     self:BuildRoster()
     self:InitializeDB()
 
+    local talentTracker = PartyOffCDCore and PartyOffCDCore.TalentTracker
+    if talentTracker and talentTracker.Init then
+        talentTracker:Init(self.db)
+        if not self.talentTrackerBound and talentTracker.RegisterCallback then
+            talentTracker:RegisterCallback(function()
+                PartyOffCD:BuildRoster()
+                PartyOffCD:RefreshTracker()
+            end)
+            self.talentTrackerBound = true
+        end
+    end
+
+    self:EnsureSpecInspector()
+
+    self:BuildRoster()
+
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
         C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
     else
         DebugPrint("C_ChatInfo unavailable; network tracking will not work.")
     end
 
-    self:CreateTrackerFrame()
-    self:CreateInterruptFrame()
-    self:CreateMissingBuffFrame()
-    self:CreateConfigPanel()
     self:CreateMinimapButton()
 
     if not self.trackerTicker then
@@ -591,10 +886,13 @@ function PartyOffCD:Initialize()
 
     self:RegisterEvent("GROUP_ROSTER_UPDATE")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
+    self:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+    self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
     self:RegisterEvent("CHAT_MSG_ADDON")
+    self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
     self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 
-    self:RefreshConfigPanel()
+    self:RefreshPartySpellcastWatchers()
     self:RefreshMinimapButton()
     self:RequestGroupOverrides()
     self:BroadcastLocalOverrides(true)
@@ -609,16 +907,18 @@ PartyOffCD:SetScript("OnEvent", function(_, event, ...)
         return
     end
 
-    if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
-        PartyOffCD:BuildRoster()
-        PartyOffCD:RequestGroupOverrides()
-        PartyOffCD:BroadcastLocalOverrides()
-        PartyOffCD:RefreshTracker()
+    if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_SPECIALIZATION_CHANGED" then
+        PartyOffCD:HandleContextChanged()
         return
     end
 
     if event == "CHAT_MSG_ADDON" then
         PartyOffCD:HandleAddonMessage(...)
+        return
+    end
+
+    if event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        PartyOffCD:HandleCombatLogEvent()
         return
     end
 

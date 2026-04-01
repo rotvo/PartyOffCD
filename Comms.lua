@@ -15,19 +15,53 @@ local BASE_SPELLS = PartyOffCDCore.BASE_SPELLS
 local NormalizeName = PartyOffCDCore.NormalizeName
 local DebugPrint = PartyOffCDCore.DebugPrint
 local SafeGetSpellInfo = PartyOffCDCore.SafeGetSpellInfo
+local HOME_PARTY_CATEGORY = LE_PARTY_CATEGORY_HOME
+    or (Enum and Enum.PartyCategory and Enum.PartyCategory.Home)
+    or 1
+local INSTANCE_PARTY_CATEGORY = LE_PARTY_CATEGORY_INSTANCE
+    or (Enum and Enum.PartyCategory and Enum.PartyCategory.Instance)
+    or 2
+
+local function GetGroupMemberCount(category)
+    if type(GetNumGroupMembers) ~= "function" then
+        return 0
+    end
+
+    local ok, count = pcall(GetNumGroupMembers, category)
+    if ok and type(count) == "number" then
+        return count
+    end
+
+    ok, count = pcall(GetNumGroupMembers)
+    if ok and type(count) == "number" then
+        return count
+    end
+
+    return 0
+end
+
+local function HasHomeGroupChannel()
+    if UnitExists and UnitExists("party1") then
+        return true
+    end
+
+    return GetGroupMemberCount(HOME_PARTY_CATEGORY) > 1
+end
+
+local function HasInstanceGroupChannel()
+    return GetGroupMemberCount(INSTANCE_PARTY_CATEGORY) > 1
+end
 
 function PartyOffCD:GetTargetChannel()
-    local instanceCategory = LE_PARTY_CATEGORY_INSTANCE
-        or (Enum and Enum.PartyCategory and Enum.PartyCategory.Instance)
-    if instanceCategory and IsInGroup(instanceCategory) then
+    if HasInstanceGroupChannel() then
         return "INSTANCE_CHAT"
     end
 
-    if IsInRaid() then
+    if HasHomeGroupChannel() and IsInRaid() then
         return "RAID"
     end
 
-    if IsInGroup() then
+    if HasHomeGroupChannel() then
         return "PARTY"
     end
 
@@ -270,6 +304,10 @@ end
 
 
 function PartyOffCD:SendSyncMessage(spellID, meta)
+    if not self:IsEnabledForCurrentContext() then
+        return false
+    end
+
     local channel = self:GetTargetChannel()
     if not channel then
         return false
@@ -281,6 +319,10 @@ function PartyOffCD:SendSyncMessage(spellID, meta)
 end
 
 function PartyOffCD:SendTimerAdjustMessage(spellID, remaining)
+    if not self:IsEnabledForCurrentContext() then
+        return false
+    end
+
     local channel = self:GetTargetChannel()
     if not channel then
         return false
@@ -292,6 +334,10 @@ function PartyOffCD:SendTimerAdjustMessage(spellID, remaining)
 end
 
 function PartyOffCD:SendDeleteMessage(spellID)
+    if not self:IsEnabledForCurrentContext() then
+        return false
+    end
+
     local channel = self:GetTargetChannel()
     if not channel then
         return false
@@ -303,6 +349,10 @@ function PartyOffCD:SendDeleteMessage(spellID)
 end
 
 function PartyOffCD:SendHelloMessage()
+    if not self:IsEnabledForCurrentContext() then
+        return false
+    end
+
     local channel = self:GetTargetChannel()
     if not channel then
         return false
@@ -325,6 +375,10 @@ function PartyOffCD:NotifyOverrideReceived(sender, spellID, meta)
 end
 
 function PartyOffCD:BroadcastLocalOverrides(force)
+    if not self:IsEnabledForCurrentContext() then
+        return
+    end
+
     local channel = self:GetTargetChannel()
     if not channel then
         return
@@ -358,6 +412,10 @@ end
 
 
 function PartyOffCD:SendUseMessage(spellID)
+    if not self:IsEnabledForCurrentContext() then
+        return false
+    end
+
     local channel = self:GetTargetChannel()
     if not channel then
         return false
@@ -371,6 +429,10 @@ end
 
 function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
     if prefix ~= PREFIX then
+        return
+    end
+
+    if not self:IsEnabledForCurrentContext() then
         return
     end
 
@@ -444,6 +506,10 @@ function PartyOffCD:HandleAddonMessage(prefix, message, _, sender)
             class = classToken,
             custom = not BASE_SPELLS[spellID],
             specs = (BASE_SPELLS[spellID] and BASE_SPELLS[spellID].specs) or (SPELLS[spellID] and SPELLS[spellID].specs) or nil,
+            requiresTalent = (BASE_SPELLS[spellID] and BASE_SPELLS[spellID].requiresTalent) or (SPELLS[spellID] and SPELLS[spellID].requiresTalent) or nil,
+            excludeIfTalent = (BASE_SPELLS[spellID] and BASE_SPELLS[spellID].excludeIfTalent) or (SPELLS[spellID] and SPELLS[spellID].excludeIfTalent) or nil,
+            requiresTalentBySpec = (BASE_SPELLS[spellID] and BASE_SPELLS[spellID].requiresTalentBySpec) or (SPELLS[spellID] and SPELLS[spellID].requiresTalentBySpec) or nil,
+            excludeIfTalentBySpec = (BASE_SPELLS[spellID] and BASE_SPELLS[spellID].excludeIfTalentBySpec) or (SPELLS[spellID] and SPELLS[spellID].excludeIfTalentBySpec) or nil,
         }
 
         local addedGlobalSpell = false

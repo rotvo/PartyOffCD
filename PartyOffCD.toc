@@ -1,11 +1,17 @@
-## Interface: 120000
+## Interface: 120001
 ## Title: PartyOffCD
 ## Notes: Self-reported offensive and defensive cooldown tracker for party play
 ## Author: Metal
 ## Version: 0.1.1
 ## SavedVariablesPerCharacter: PartyOffCDDB
 
+Libs\LibStub\LibStub.lua
+Libs\LibSpecialization\LibSpecialization.lua
+
 Core.lua
+Inspector.lua
+PvPTalentSync.lua
+Talents.lua
 PartyOffCD.lua
 Spells.lua
 Comms.lua

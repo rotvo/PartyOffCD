@@ -129,18 +129,36 @@ local SPEC_ALIASES = {
 
 local SPELLS = {
     -- PALADIN
-    [31884] = { cd = 120, type = "OFF", class = "PALADIN" }, -- Avenging Wrath
+    [31884] = {
+        cd = 120,
+        type = "OFF",
+        class = "PALADIN",
+        specs = { "HOLY", "PROTECTION", "RETRIBUTION" },
+        excludeIfTalentBySpec = {
+            HOLY = 216331,
+            PROTECTION = 389539,
+            RETRIBUTION = 458359,
+        },
+    }, -- Avenging Wrath
     [96231] = { cd = 15, type = "INT", class = "PALADIN" }, -- Rebuke
-    [216331] = { cd = 60, type = "OFF", class = "PALADIN", specs = { "HOLY" } }, -- Avenging Crusader
+    [216331] = { cd = 60, type = "OFF", class = "PALADIN", specs = { "HOLY" }, requiresTalent = 216331 }, -- Avenging Crusader
+    [389539] = { cd = 120, type = "OFF", class = "PALADIN", specs = { "PROTECTION" }, requiresTalent = 389539, excludeIfTalent = 31884 }, -- Sentinel
     [642] = { cd = 300, type = "DEF", class = "PALADIN" }, -- Divine Shield
-    [6940] = { cd = 120, type = "DEF", class = "PALADIN" }, -- Blessing of Sacrifice
+    [1044] = { cd = 25, type = "DEF", class = "PALADIN" }, -- Blessing of Freedom
+    [498] = { cd = 60, type = "DEF", class = "PALADIN", specs = { "HOLY" } }, -- Divine Protection
+    [403876] = { cd = 90, type = "DEF", class = "PALADIN", specs = { "RETRIBUTION" } }, -- Divine Protection
+    [204018] = { cd = 300, type = "DEF", class = "PALADIN", specs = { "HOLY", "PROTECTION", "RETRIBUTION" }, requiresTalent = 5692 }, -- Blessing of Spellwarding
+    [1022] = { cd = 300, type = "DEF", class = "PALADIN", specs = { "HOLY", "PROTECTION", "RETRIBUTION" }, excludeIfTalent = 5692 }, -- Blessing of Protection
+    [6940] = { cd = 120, type = "DEF", class = "PALADIN", specs = { "HOLY", "PROTECTION", "RETRIBUTION" } }, -- Blessing of Sacrifice
     [31850] = { cd = 90, type = "DEF", class = "PALADIN", specs = { "PROTECTION" } }, -- Ardent Defender
+    [86659] = { cd = 180, type = "DEF", class = "PALADIN", specs = { "PROTECTION" } }, -- Guardian of Ancient Kings
 
     -- EVOKER
     [375087] = { cd = 120, type = "OFF", class = "EVOKER", specs = { "DEVASTATION" } }, -- Dragonrage
     [351338] = { cd = 20, type = "INT", class = "EVOKER" }, -- Quell
     [370553] = { cd = 120, type = "OFF", class = "EVOKER" }, -- Tip the Scales
     [357210] = { cd = 120, type = "OFF", class = "EVOKER" }, -- Deep Breath
+    [357170] = { cd = 60, type = "DEF", class = "EVOKER", specs = { "PRESERVATION" } }, -- Time Dilation
     [363916] = { cd = 90, type = "DEF", class = "EVOKER" }, -- Obsidian Scales
     [374227] = { cd = 120, type = "DEF", class = "EVOKER" }, -- Zephyr
 
@@ -149,14 +167,16 @@ local SPELLS = {
     [321507] = { cd = 45, type = "OFF", class = "MAGE", specs = { "ARCANE" } }, -- [Touch of the Magi]
     [365350] = { cd = 90, type = "OFF", class = "MAGE", specs = { "ARCANE" } }, -- [Arcane Surge]
     [12472] = { cd = 120, type = "OFF", class = "MAGE", specs = { "FROST" } }, -- Icy Veins
-    [45438] = { cd = 240, type = "DEF", class = "MAGE" }, -- Ice Block
+    [45438] = { cd = 240, type = "DEF", class = "MAGE", excludeIfTalent = 414659 }, -- Ice Block
+    [414659] = { cd = 240, type = "DEF", class = "MAGE", requiresTalent = 414659 }, -- Ice Cold
     [2139] = { cd = 25, type = "INT", class = "MAGE" }, -- Counterspell
-    [342245] = { cd = 60, type = "DEF", class = "MAGE" }, -- Alter Time
+    [342246] = { cd = 50, type = "DEF", class = "MAGE" }, -- Alter Time
 
     -- PRIEST
     [10060] = { cd = 120, type = "OFF", class = "PRIEST" }, -- Power Infusion
     [228260] = { cd = 120, type = "OFF", class = "PRIEST", specs = { "SHADOW" } }, -- Voidform
     [200183] = { cd = 120, type = "OFF", class = "PRIEST", specs = { "HOLY" } }, -- Apotheosis
+    [64843] = { cd = 180, type = "OFF", class = "PRIEST", specs = { "HOLY" } }, -- Divine Hymn
     [47585] = { cd = 120, type = "DEF", class = "PRIEST", specs = { "SHADOW" } }, -- Dispersion
     [33206] = { cd = 180, type = "DEF", class = "PRIEST", specs = { "DISC" } }, -- Pain Suppression
     [47788] = { cd = 180, type = "DEF", class = "PRIEST", specs = { "HOLY" } }, -- Guardian Spirit
@@ -167,7 +187,7 @@ local SPELLS = {
     -- ROGUE
     [13750] = { cd = 180, type = "OFF", class = "ROGUE", specs = { "OUTLAW" } }, -- Adrenaline Rush
     [1766] = { cd = 15, type = "INT", class = "ROGUE" }, -- Kick
-    [121471] = { cd = 90, type = "OFF", class = "ROGUE" }, -- Shadow Blades
+    [121471] = { cd = 90, type = "OFF", class = "ROGUE", specs = { "SUBTLETY" } }, -- Shadow Blades
     [31224] = { cd = 120, type = "DEF", class = "ROGUE" }, -- Cloak of Shadows
     [5277] = { cd = 120, type = "DEF", class = "ROGUE" }, -- Evasion
 
@@ -177,7 +197,9 @@ local SPELLS = {
     [187707] = { cd = 15, type = "INT", class = "HUNTER", specs = { "SV" } }, -- Muzzle
     [288613] = { cd = 120, type = "OFF", class = "HUNTER", specs = { "MM" } }, -- Trueshot
     [266779] = { cd = 120, type = "OFF", class = "HUNTER", specs = { "SV" } }, -- Coordinated Assault
+    [1250646] = { cd = 90, type = "OFF", class = "HUNTER", specs = { "SV" } }, -- Takedown
     [186265] = { cd = 180, type = "DEF", class = "HUNTER" }, -- Aspect of the Turtle
+    [264735] = { cd = 90, type = "DEF", class = "HUNTER" }, -- Survival of the Fittest
     [109304] = { cd = 120, type = "DEF", class = "HUNTER" }, -- Exhilaration
 
     -- SHAMAN
@@ -192,9 +214,10 @@ local SPELLS = {
     [116705] = { cd = 15, type = "INT", class = "MONK", specs = { "BREWMASTER", "WINDWALKER" } }, -- Spear Hand Strike
     [137639] = { cd = 90, type = "OFF", class = "MONK", specs = { "WINDWALKER" } }, -- Storm, Earth, and Fire
     [123904] = { cd = 120, type = "OFF", class = "MONK", specs = { "WINDWALKER" } }, -- Invoke Xuen, the White Tiger
-    [115203] = { cd = 360, type = "DEF", class = "MONK" }, -- Fortifying Brew
+    [115203] = { cd = 120, cdBySpec = { BREWMASTER = 360 }, type = "DEF", class = "MONK" }, -- Fortifying Brew
     [122783] = { cd = 90, type = "DEF", class = "MONK", specs = { "WINDWALKER", "MISTWEAVER" } }, -- Diffuse Magic
     [132578] = { cd = 120, type = "DEF", class = "MONK", specs = { "BREWMASTER" } }, -- Invoke Niuzao, the Black Ox
+    [116849] = { cd = 120, type = "DEF", class = "MONK", specs = { "MISTWEAVER" } }, -- Life Cocoon
     [115399] = { cd = 120, type = "DEF", class = "MONK", specs = { "BREWMASTER" } }, -- Black Ox Brew
     [119582] = { cd = 20, type = "DEF", class = "MONK", specs = { "BREWMASTER" } }, -- Purifying Brew
     [1241059] = { cd = 45, type = "DEF", class = "MONK", specs = { "BREWMASTER" } }, -- Celestial Infusion
@@ -214,25 +237,29 @@ local SPELLS = {
     [97462] = { cd = 180, type = "DEF", class = "WARRIOR" }, -- Rallying Cry
     [6552] = { cd = 15, type = "INT", class = "WARRIOR" }, -- Pummel
     [871] = { cd = 180, type = "DEF", class = "WARRIOR", specs = { "PROTECTION" } }, -- Shield Wall
-    [118038] = { cd = 120, type = "DEF", class = "WARRIOR" }, -- Die by the Sword
+    [118038] = { cd = 120, type = "DEF", class = "WARRIOR", specs = { "ARMS" } }, -- Die by the Sword
+    [184364] = { cd = 120, type = "DEF", class = "WARRIOR", specs = { "FURY" } }, -- Enraged Regeneration
     [1719] = { cd = 90, type = "OFF", class = "WARRIOR", specs = { "FURY" } }, -- Recklessness
-    [107574] = { cd = 90, type = "OFF", class = "WARRIOR", specs = { "ARMS", "FURY", "PROTECTION" } }, -- Avatar
+    [107574] = { cd = 90, type = "OFF", class = "WARRIOR", specs = { "ARMS", "FURY", "PROTECTION" }, requiresTalent = 107574 }, -- Avatar
 
     -- DRUID
     [22812] = { cd = 60, type = "DEF", class = "DRUID", specs = { "BALANCE", "GUARDIAN", "RESTORATION" } }, -- Barkskin
     [106839] = { cd = 15, type = "INT", class = "DRUID", specs = { "FERAL", "GUARDIAN" } }, -- Skull Bash
     [61336] = { cd = 180, type = "DEF", class = "DRUID", specs = { "FERAL", "GUARDIAN" } }, -- Survival Instincts
     [102342] = { cd = 90, type = "DEF", class = "DRUID", specs = { "RESTORATION" } }, -- Ironbark
-    [106951] = { cd = 180, type = "OFF", class = "DRUID", specs = { "FERAL" } }, -- Berserk
-    [194223] = { cd = 180, type = "OFF", class = "DRUID", specs = { "BALANCE" } }, -- Celestial Alignment
+    [106951] = { cd = 180, type = "OFF", class = "DRUID", specs = { "FERAL" }, excludeIfTalent = 102543 }, -- Berserk
+    [102543] = { cd = 180, type = "OFF", class = "DRUID", specs = { "FERAL" }, requiresTalent = 102543 }, -- Incarnation: Avatar of Ashamane
+    [194223] = { cd = 180, type = "OFF", class = "DRUID", specs = { "BALANCE" }, excludeIfTalent = 102560 }, -- Celestial Alignment
+    [102560] = { cd = 180, type = "OFF", class = "DRUID", specs = { "BALANCE" }, requiresTalent = 102560 }, -- Incarnation: Chosen of Elune
     [204066] = { cd = 60, type = "DEF", class = "DRUID", specs = { "GUARDIAN" } }, -- Lunar Beam
     [22842] = { cd = 36, type = "DEF", class = "DRUID", specs = { "GUARDIAN" } }, -- Frenzied Regeneration
-    [102558] = { cd = 180, type = "DEF", class = "DRUID", specs = { "GUARDIAN" } }, -- Incarnation: Guardian of Ursoc
+    [102558] = { cd = 180, type = "OFF", class = "DRUID", specs = { "GUARDIAN" } }, -- Incarnation: Guardian of Ursoc
 
     -- DEATH KNIGHT
     [48792] = { cd = 120, type = "DEF", class = "DEATHKNIGHT" }, -- Icebound Fortitude
     [47528] = { cd = 15, type = "INT", class = "DEATHKNIGHT" }, -- Mind Freeze
     [48707] = { cd = 60, type = "DEF", class = "DEATHKNIGHT" }, -- Anti-Magic Shell
+    [55233] = { cd = 90, type = "DEF", class = "DEATHKNIGHT", specs = { "BLOOD" } }, -- Vampiric Blood
     [51271] = { cd = 45, type = "OFF", class = "DEATHKNIGHT", specs = { "FROST" } }, -- Pillar of Frost
     [47568] = { cd = 30, type = "OFF", class = "DEATHKNIGHT", specs = { "FROST" } }, -- Empower Rune Weapon
     [1233448] = { cd = 45, type = "OFF", class = "DEATHKNIGHT", specs = { "UNHOLY" } }, -- Dark Transformation
@@ -242,6 +269,7 @@ local SPELLS = {
     [183752] = { cd = 15, type = "INT", class = "DEMONHUNTER" }, -- Disrupt
     [191427] = { cd = 120, type = "OFF", class = "DEMONHUNTER", specs = { "HAVOC" } }, -- Metamorphosis
     [198589] = { cd = 60, type = "DEF", class = "DEMONHUNTER", specs = { "HAVOC" } }, -- Blur
+    [204021] = { cd = 60, type = "DEF", class = "DEMONHUNTER", specs = { "VENGEANCE" } }, -- Fiery Brand
     [196718] = { cd = 300, type = "DEF", class = "DEMONHUNTER" }, -- Darkness
 }
 
@@ -249,9 +277,14 @@ local BASE_SPELLS = {}
 for spellID, meta in pairs(SPELLS) do
     BASE_SPELLS[spellID] = {
         cd = meta.cd,
+        cdBySpec = meta.cdBySpec,
         type = meta.type,
         class = meta.class,
         specs = meta.specs,
+        requiresTalent = meta.requiresTalent,
+        excludeIfTalent = meta.excludeIfTalent,
+        requiresTalentBySpec = meta.requiresTalentBySpec,
+        excludeIfTalentBySpec = meta.excludeIfTalentBySpec,
     }
 end
 
@@ -273,6 +306,48 @@ local function ResolveSpecValue(classToken, specValue)
     return nil
 end
 
+local function CopyMeta(meta)
+    if not meta then
+        return nil
+    end
+
+    local copy = {}
+    for key, value in pairs(meta) do
+        if type(value) == "table" then
+            local nested = {}
+            for nestedKey, nestedValue in pairs(value) do
+                nested[nestedKey] = nestedValue
+            end
+            copy[key] = nested
+        else
+            copy[key] = value
+        end
+    end
+
+    return copy
+end
+
+local function ResolveSpecMappedValue(classToken, specID, valueMap)
+    if type(valueMap) ~= "table" then
+        return nil
+    end
+
+    if specID and valueMap[specID] ~= nil then
+        return valueMap[specID]
+    end
+
+    for mapKey, mapValue in pairs(valueMap) do
+        if mapKey ~= "default" then
+            local resolvedSpecID = ResolveSpecValue(classToken, mapKey)
+            if resolvedSpecID == specID then
+                return mapValue
+            end
+        end
+    end
+
+    return valueMap.default
+end
+
 
 PartyOffCDCore.CLASS_ORDER = CLASS_ORDER
 PartyOffCDCore.CLASS_LABELS = CLASS_LABELS
@@ -280,6 +355,7 @@ PartyOffCDCore.SPELL_TYPE_PRIORITY = SPELL_TYPE_PRIORITY
 PartyOffCDCore.SPELLS = SPELLS
 PartyOffCDCore.BASE_SPELLS = BASE_SPELLS
 PartyOffCDCore.ResolveSpecValue = ResolveSpecValue
+PartyOffCDCore.ResolveSpecMappedValue = ResolveSpecMappedValue
 
 local DebugPrint = PartyOffCDCore.DebugPrint
 local CopyDefaults = PartyOffCDCore.CopyDefaults
@@ -329,13 +405,60 @@ function PartyOffCD:GetPlayerOverride(spellID, senderKey)
     return nil
 end
 
+function PartyOffCD:GetSenderUnit(senderKey)
+    senderKey = self:ResolveSenderKey(senderKey)
+    if not senderKey then
+        return nil
+    end
+
+    local rosterEntry = self.rosterLookup[senderKey]
+    if rosterEntry and rosterEntry.unit then
+        return rosterEntry.unit
+    end
+
+    if self:IsSelfSender(senderKey) then
+        return "player"
+    end
+
+    return nil
+end
+
+function PartyOffCD:ResolveMetaCooldown(meta, specID)
+    if not meta then
+        return nil
+    end
+
+    local resolved = tonumber(meta.cd) or meta.cd
+    local specCooldown = ResolveSpecMappedValue(meta.class, specID, meta.cdBySpec)
+    if specCooldown ~= nil then
+        resolved = tonumber(specCooldown) or specCooldown
+    end
+
+    return resolved
+end
+
 function PartyOffCD:GetEffectiveMeta(senderKey, spellID)
     local override = self:GetPlayerOverride(spellID, senderKey)
     if override then
         return override
     end
 
-    return BASE_SPELLS[spellID] or SPELLS[spellID]
+    local baseMeta = BASE_SPELLS[spellID] or SPELLS[spellID]
+    if not baseMeta then
+        return nil
+    end
+
+    local unit = self:GetSenderUnit(senderKey)
+    local specID = self:GetSenderSpecID(senderKey)
+    local effectiveMeta = CopyMeta(baseMeta)
+    effectiveMeta.cd = self:ResolveMetaCooldown(baseMeta, specID)
+
+    local talentTracker = PartyOffCDCore and PartyOffCDCore.TalentTracker
+    if talentTracker and unit and effectiveMeta.class and effectiveMeta.cd then
+        effectiveMeta.cd = talentTracker:GetUnitCooldown(unit, specID, effectiveMeta.class, spellID, effectiveMeta.cd)
+    end
+
+    return effectiveMeta
 end
 
 function PartyOffCD:GetDisplayMeta(spellID)
@@ -348,12 +471,17 @@ local function CreateStoredSpellMeta(spellID, meta)
         return nil
     end
 
+    local baseMeta = BASE_SPELLS[spellID] or SPELLS[spellID]
     return {
         cd = tonumber(meta.cd) or meta.cd,
         type = meta.type,
         class = meta.class,
         custom = not BASE_SPELLS[spellID],
-        specs = meta.specs or (BASE_SPELLS[spellID] and BASE_SPELLS[spellID].specs) or nil,
+        specs = meta.specs or (baseMeta and baseMeta.specs) or nil,
+        requiresTalent = meta.requiresTalent or (baseMeta and baseMeta.requiresTalent) or nil,
+        excludeIfTalent = meta.excludeIfTalent or (baseMeta and baseMeta.excludeIfTalent) or nil,
+        requiresTalentBySpec = meta.requiresTalentBySpec or (baseMeta and baseMeta.requiresTalentBySpec) or nil,
+        excludeIfTalentBySpec = meta.excludeIfTalentBySpec or (baseMeta and baseMeta.excludeIfTalentBySpec) or nil,
     }
 end
 
@@ -511,6 +639,10 @@ function PartyOffCD:AddCustomSpell(classToken, spellID, cooldown, spellType)
         class = classToken,
         custom = not existing,
         specs = existing and existing.specs or nil,
+        requiresTalent = existing and existing.requiresTalent or nil,
+        excludeIfTalent = existing and existing.excludeIfTalent or nil,
+        requiresTalentBySpec = existing and existing.requiresTalentBySpec or nil,
+        excludeIfTalentBySpec = existing and existing.excludeIfTalentBySpec or nil,
     }
 
     self:GetOverrideBucket(playerKey, true)[spellID] = override
@@ -593,16 +725,100 @@ function PartyOffCD:GetSpellMeta(spellID)
     return SPELLS[spellID]
 end
 
+function PartyOffCD:IsSpecAllowedForMeta(meta, specID)
+    if not meta or not meta.specs or not specID then
+        return true
+    end
+
+    for _, specValue in ipairs(meta.specs) do
+        local allowedSpecID = ResolveSpecValue(meta.class, specValue)
+        if allowedSpecID == specID then
+            return true
+        end
+    end
+
+    return false
+end
+
+function PartyOffCD:IsTalentAllowedForMeta(meta, unit, specID)
+    if not meta or not unit then
+        return true
+    end
+
+    local talentTracker = PartyOffCDCore and PartyOffCDCore.TalentTracker
+    if not talentTracker or not talentTracker.UnitHasTalent then
+        return true
+    end
+
+    local excludeTalent = meta.excludeIfTalent or ResolveSpecMappedValue(meta.class, specID, meta.excludeIfTalentBySpec)
+    if excludeTalent and talentTracker:UnitHasTalent(unit, excludeTalent, specID) then
+        return false
+    end
+
+    local requiredTalent = meta.requiresTalent or ResolveSpecMappedValue(meta.class, specID, meta.requiresTalentBySpec)
+    if requiredTalent and not talentTracker:UnitHasTalent(unit, requiredTalent, specID) then
+        return false
+    end
+
+    return true
+end
+
+function PartyOffCD:DoesMetaMatchUnit(meta, classToken, specID, unit)
+    if not meta then
+        return false
+    end
+
+    if classToken and meta.class and meta.class ~= classToken then
+        return false
+    end
+
+    if not self:IsSpecAllowedForMeta(meta, specID) then
+        return false
+    end
+
+    return self:IsTalentAllowedForMeta(meta, unit, specID)
+end
+
+function PartyOffCD:GetSingleSpecIDForMeta(meta)
+    if not meta or type(meta.specs) ~= "table" or #meta.specs ~= 1 then
+        return nil
+    end
+
+    return ResolveSpecValue(meta.class, meta.specs[1])
+end
+
 
 function PartyOffCD:InitializeDB()
     PartyOffCDDB = CopyDefaults(PartyOffCDDB, DB_DEFAULTS)
     self.db = PartyOffCDDB
 
     local attach = string.upper(tostring(self.db.trackerAttach or DB_DEFAULTS.trackerAttach or "LEFT"))
-    if attach ~= "LEFT" and attach ~= "RIGHT" and attach ~= "TOP" and attach ~= "BOTTOM" then
+    if attach ~= "LEFT" and attach ~= "RIGHT" and attach ~= "CENTER" and attach ~= "TOP" and attach ~= "BOTTOM" then
         attach = DB_DEFAULTS.trackerAttach or "LEFT"
     end
     self.db.trackerAttach = attach
+
+    local trackerOffsetX = tonumber(self.db.trackerOffsetX)
+    if trackerOffsetX == nil then
+        trackerOffsetX = tonumber(DB_DEFAULTS.trackerOffsetX) or -4
+    end
+    if trackerOffsetX < -250 then
+        trackerOffsetX = -250
+    elseif trackerOffsetX > 250 then
+        trackerOffsetX = 250
+    end
+    self.db.trackerOffsetX = math.floor(trackerOffsetX)
+
+    local trackerOffsetY = tonumber(self.db.trackerOffsetY)
+    if trackerOffsetY == nil then
+        trackerOffsetY = tonumber(DB_DEFAULTS.trackerOffsetY) or 0
+    end
+    if trackerOffsetY < -250 then
+        trackerOffsetY = -250
+    elseif trackerOffsetY > 250 then
+        trackerOffsetY = 250
+    end
+    self.db.trackerOffsetY = math.floor(trackerOffsetY)
 
     local columns = tonumber(self.db.trackerColumns) or tonumber(DB_DEFAULTS.trackerColumns) or 1
     columns = math.floor(columns)
@@ -616,6 +832,30 @@ function PartyOffCD:InitializeDB()
         columns = maxColumns
     end
     self.db.trackerColumns = columns
+
+    local trackerRows = tonumber(self.db.trackerRows)
+    if trackerRows == nil then
+        trackerRows = tonumber(DB_DEFAULTS.trackerRows) or 1
+    end
+    trackerRows = math.floor(trackerRows)
+    if trackerRows < 1 then
+        trackerRows = 1
+    elseif trackerRows > 3 then
+        trackerRows = 3
+    end
+    self.db.trackerRows = trackerRows
+
+    local trackerMaxIcons = tonumber(self.db.trackerMaxIcons)
+    if trackerMaxIcons == nil then
+        trackerMaxIcons = tonumber(DB_DEFAULTS.trackerMaxIcons) or 10
+    end
+    trackerMaxIcons = math.floor(trackerMaxIcons)
+    if trackerMaxIcons < 1 then
+        trackerMaxIcons = 1
+    elseif trackerMaxIcons > 12 then
+        trackerMaxIcons = 12
+    end
+    self.db.trackerMaxIcons = trackerMaxIcons
 
     local iconScale = tonumber(self.db.trackerIconScale)
     if not iconScale and self.db.trackerIconSize then
@@ -631,6 +871,22 @@ function PartyOffCD:InitializeDB()
         iconScale = MAX_TRACKER_ICON_SCALE
     end
     self.db.trackerIconScale = iconScale
+
+    if self.db.trackerShowOffensive == nil then
+        self.db.trackerShowOffensive = DB_DEFAULTS.trackerShowOffensive ~= false
+    end
+    if self.db.trackerShowDefensive == nil then
+        self.db.trackerShowDefensive = DB_DEFAULTS.trackerShowDefensive ~= false
+    end
+    if self.db.trackerShowTooltips == nil then
+        self.db.trackerShowTooltips = DB_DEFAULTS.trackerShowTooltips ~= false
+    end
+    if self.db.trackerReverseCooldown == nil then
+        self.db.trackerReverseCooldown = DB_DEFAULTS.trackerReverseCooldown == true
+    end
+    if self.db.trackerExcludeSelf == nil then
+        self.db.trackerExcludeSelf = DB_DEFAULTS.trackerExcludeSelf == true
+    end
 
     for _, classToken in ipairs(CLASS_ORDER) do
         if self.db.classEnabled[classToken] == nil then
