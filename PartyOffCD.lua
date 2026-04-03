@@ -24,10 +24,9 @@ local INTERRUPT_ICON_SIZE = 18
 local FALLBACK_X = 210
 local FALLBACK_Y = 120
 local MINIMAP_RADIUS = 96
+-- Interrupts still need cast/combat-log tracking because they do not produce a tracked aura.
 local COMBAT_LOG_TRACKED_SUBEVENTS = {
     SPELL_CAST_SUCCESS = true,
-    SPELL_AURA_APPLIED = true,
-    SPELL_AURA_REFRESH = true,
     SPELL_INTERRUPT = true,
 }
 
@@ -41,6 +40,7 @@ PartyOffCD.cooldowns = {}
 PartyOffCD.duplicateCache = {}
 PartyOffCD.roster = {}
 PartyOffCD.rosterLookup = {}
+PartyOffCD.rosterGuidLookup = {}
 PartyOffCD.rows = {}
 PartyOffCD.iconPool = {}
 PartyOffCD.playerKeys = {}
@@ -53,7 +53,6 @@ PartyOffCD.missingBuffIconPool = {}
 PartyOffCD.missingBuffIcons = {}
 PartyOffCD.lastOverrideBroadcast = 0
 PartyOffCD.lastRealtimeSync = 0
-PartyOffCD.lastLocalReport = {}
 PartyOffCD.senderSpecIDs = {}
 PartyOffCD.addonUsers = {}
 PartyOffCD.partyCastFrames = {}
@@ -61,6 +60,7 @@ PartyOffCD.specInspectorBound = false
 PartyOffCD.talentTrackerBound = false
 PartyOffCD.cooldownAlerts = {}
 PartyOffCD.specInspectorInitialized = false
+PartyOffCD.observedAuraState = {}
 
 local function DebugPrint(message)
     print("|cff33ff99PartyOffCD|r: " .. tostring(message))
@@ -107,6 +107,23 @@ local function TrySafeNumber(value)
     end
 
     return nil
+end
+
+local function IsSecretValue(value)
+    return type(issecretvalue) == "function" and issecretvalue(value)
+end
+
+local function NormalizeSpellID(value)
+    if value == nil or IsSecretValue(value) then
+        return nil
+    end
+
+    local spellID = tonumber(value)
+    if type(spellID) ~= "number" or spellID <= 0 then
+        return nil
+    end
+
+    return spellID
 end
 
 local function SafeGetSpellCooldown(spellID)
@@ -274,6 +291,8 @@ PartyOffCDCore.ApplyLightOutline = ApplyLightOutline
 PartyOffCDCore.GetNextSpellType = GetNextSpellType
 PartyOffCDCore.CreateCheckbox = CreateCheckbox
 PartyOffCDCore.CreateNumericEditBox = CreateNumericEditBox
+PartyOffCDCore.IsSecretValue = IsSecretValue
+PartyOffCDCore.NormalizeSpellID = NormalizeSpellID
 
 function PartyOffCD:GetClassLabel(classToken)
     return (PartyOffCDCore.CLASS_LABELS and PartyOffCDCore.CLASS_LABELS[classToken]) or classToken or "Unknown"
@@ -406,6 +425,7 @@ end
 
 function PartyOffCD:HandleContextChanged()
     self:EnsureSpecInspector()
+    self.observedAuraState = {}
     self:BuildRoster()
     self:RefreshPartySpellcastWatchers()
     if self:IsEnabledForCurrentContext() then
@@ -446,6 +466,14 @@ function PartyOffCD:ResolveSenderKey(sender)
     end
 
     return key
+end
+
+function PartyOffCD:GetSenderEntryByGUID(guid)
+    if not guid or IsSecretValue(guid) then
+        return nil
+    end
+
+    return self.rosterGuidLookup and self.rosterGuidLookup[guid] or nil
 end
 
 function PartyOffCD:ShouldIgnoreDuplicate(senderKey, spellID)
@@ -627,24 +655,8 @@ function PartyOffCD:CanReportLocalUse(spellID)
     return true, 0
 end
 
-function PartyOffCD:HandleObservedUnitSpellcast(unit, spellID, senderTime)
-    spellID = tonumber(spellID)
-    if not self:IsEnabledForCurrentContext() or not spellID or not unit or not UnitExists(unit) then
-        return false
-    end
-
-    local fullName = GetUnitFullName(unit)
-    local shortName = UnitName(unit)
-    local sender = fullName or shortName
-    if not sender then
-        return false
-    end
-
-    return self:HandleObservedSenderSpellcast(sender, spellID, senderTime)
-end
-
-function PartyOffCD:HandleObservedSenderSpellcast(sender, spellID, senderTime)
-    spellID = tonumber(spellID)
+function PartyOffCD:HandleObservedSenderSpellcast(sender, spellID, senderTime, unitHint)
+    spellID = NormalizeSpellID(spellID)
     if not self:IsEnabledForCurrentContext() or not spellID or not sender then
         return false
     end
@@ -659,7 +671,7 @@ function PartyOffCD:HandleObservedSenderSpellcast(sender, spellID, senderTime)
         return false
     end
 
-    local unit = self:GetSenderUnit(senderKey)
+    local unit = unitHint or self:GetSenderUnit(senderKey)
     if unit and not UnitExists(unit) then
         unit = nil
     end
@@ -702,26 +714,27 @@ function PartyOffCD:HandleObservedSenderSpellcast(sender, spellID, senderTime)
     return true
 end
 
-function PartyOffCD:HandleLocalSpellcastSucceeded(spellID)
-    spellID = tonumber(spellID)
-    if not self:IsEnabledForCurrentContext() or not spellID or not self:GetSpellMeta(spellID) or not self:IsSpellEnabled(spellID) then
-        return
+function PartyOffCD:HandleObservedCombatLogSpellcast(sourceGUID, sourceName, spellID, senderTime)
+    spellID = NormalizeSpellID(spellID)
+    if not self:IsEnabledForCurrentContext() or not spellID then
+        return false
     end
 
-    local now = GetTime()
-    local last = self.lastLocalReport[spellID]
-    if last and (now - last) < 0.75 then
-        return
+    local rosterEntry = self:GetSenderEntryByGUID(sourceGUID)
+    if rosterEntry then
+        return self:HandleObservedSenderSpellcast(
+            rosterEntry.fullName or rosterEntry.name or rosterEntry.key,
+            spellID,
+            senderTime,
+            rosterEntry.unit
+        )
     end
 
-    self.lastLocalReport[spellID] = now
-    if self:HandleObservedUnitSpellcast("player", spellID, now) then
-        self:SendUseMessage(spellID)
+    if sourceName and not IsSecretValue(sourceName) then
+        return self:HandleObservedSenderSpellcast(sourceName, spellID, senderTime)
     end
-end
 
-function PartyOffCD:HandlePartySpellcastSucceeded(unit, spellID)
-    self:HandleObservedUnitSpellcast(unit, spellID, GetTime())
+    return false
 end
 
 function PartyOffCD:HandleCombatLogEvent()
@@ -729,29 +742,41 @@ function PartyOffCD:HandleCombatLogEvent()
         return
     end
 
-    local timestamp, subevent, _, _, sourceName, _, _, _, _, _, _, spellID = CombatLogGetCurrentEventInfo()
-    if not COMBAT_LOG_TRACKED_SUBEVENTS[subevent] or not sourceName or not spellID then
+    local timestamp, subevent, _, sourceGUID, sourceName, _, _, _, _, _, _, spellID = CombatLogGetCurrentEventInfo()
+    spellID = NormalizeSpellID(spellID)
+    if not COMBAT_LOG_TRACKED_SUBEVENTS[subevent] or not spellID then
         return
     end
 
-    if not self:GetSpellMeta(spellID) or not self:IsSpellEnabled(spellID) then
+    local meta = self:GetSpellMeta(spellID)
+    if not meta or meta.type ~= "INT" or not self:IsSpellEnabled(spellID) then
         return
     end
 
-    self:HandleObservedSenderSpellcast(sourceName, spellID, timestamp or GetTime())
+    self:HandleObservedCombatLogSpellcast(sourceGUID, sourceName, spellID, timestamp or GetTime())
 end
 
 function PartyOffCD:RefreshPartySpellcastWatchers()
     local shouldWatchParty = self:IsEnabledForCurrentContext() and self:HasTrackedPartyMembers()
-
+    local units = { "player" }
     for index = 1, MAX_TRACKED_ROWS - 1 do
-        local unit = "party" .. index
+        units[#units + 1] = "party" .. index
+    end
+
+    for _, unit in ipairs(units) do
         local frame = self.partyCastFrames[unit]
 
         if not frame then
             frame = CreateFrame("Frame")
-            frame:SetScript("OnEvent", function(_, _, eventUnit, _, observedSpellID)
-                PartyOffCD:HandlePartySpellcastSucceeded(eventUnit or unit, observedSpellID)
+            frame:SetScript("OnEvent", function(_, event, eventUnit, ...)
+                local watchedUnit = eventUnit or unit
+                if event == "UNIT_SPELLCAST_SUCCEEDED" then
+                    PartyOffCD:HandleObservedUnitSpellcastEvidence(watchedUnit)
+                elseif event == "UNIT_AURA" then
+                    PartyOffCD:HandleObservedUnitAuraChanged(watchedUnit, ...)
+                elseif event == "UNIT_FLAGS" then
+                    PartyOffCD:HandleObservedUnitFlagsChanged(watchedUnit)
+                end
             end)
             self.partyCastFrames[unit] = frame
         end
@@ -759,6 +784,10 @@ function PartyOffCD:RefreshPartySpellcastWatchers()
         frame:UnregisterAllEvents()
         if shouldWatchParty then
             frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", unit)
+            frame:RegisterUnitEvent("UNIT_AURA", unit)
+            frame:RegisterUnitEvent("UNIT_FLAGS", unit)
+        else
+            self.observedAuraState[unit] = nil
         end
     end
 end
@@ -890,7 +919,7 @@ function PartyOffCD:Initialize()
     self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
     self:RegisterEvent("CHAT_MSG_ADDON")
     self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-    self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+    self:RegisterEvent("UNIT_ABSORB_AMOUNT_CHANGED")
 
     self:RefreshPartySpellcastWatchers()
     self:RefreshMinimapButton()
@@ -922,11 +951,9 @@ PartyOffCD:SetScript("OnEvent", function(_, event, ...)
         return
     end
 
-    if event == "UNIT_SPELLCAST_SUCCEEDED" then
-        local unit, _, spellID = ...
-        if unit == "player" then
-            PartyOffCD:HandleLocalSpellcastSucceeded(spellID)
-        end
+    if event == "UNIT_ABSORB_AMOUNT_CHANGED" then
+        local unit = ...
+        PartyOffCD:HandleObservedAbsorbAmountChanged(unit)
     end
 end)
 
@@ -946,11 +973,11 @@ PartyOffCD notes:
    The config panel can also overwrite existing base spells with your own CD/type/class values.
    Overrides are stored per character and are broadcast to party members automatically.
 
-2) Midnight limitations
-   This addon does not read the real cooldown state.
-   It only tracks base timers from local author-reports plus addon comms.
-   Talents, resets, cooldown reduction, encounter modifiers, spec changes, and failed casts
-   can make timers inaccurate. This is expected by design for the MVP.
+2) Tracking model
+   Offensive and defensive cooldowns are inferred from aura appearance/removal plus evidence
+   such as cast, debuff, shield, and unit-flag events. Only spells with explicit rules in
+   AuraTracker.lua auto-track with this model.
+   Interrupts still use combat-log tracking because they do not leave a tracked aura.
 
 3) Slash examples
    /pocd use 31884
@@ -977,6 +1004,5 @@ PartyOffCD notes:
    Example: /pocd timer 31884 45
    This updates your own running timer and notifies the group.
    The addon also requests and rebroadcasts custom overrides whenever you join or change group.
-   The tracker now always shows all enabled spells; use the checkboxes to hide spells you do not want to see.
+   The tracker shows aura-supported offensive/defensive spells plus any active manual timers.
 ]]
-

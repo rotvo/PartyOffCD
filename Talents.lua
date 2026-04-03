@@ -162,6 +162,33 @@ local SpecPvPCooldownModifiers = {
     },
 }
 
+local ClassDurationModifiers = {
+    DEATHKNIGHT = {
+        [205727] = { { { SpellID = 48707, Amount = 40, Mult = true } } },
+    },
+    DRUID = {
+        [327993] = { { { SpellID = 22812, Amount = 4 } } },
+    },
+    HUNTER = {
+        [388039] = { { { SpellID = 264735, Amount = 2 } } },
+    },
+}
+
+local SpecDurationModifiers = {
+    [66] = {
+        [204074] = { { { SpellID = 31884, Amount = -40, Mult = true }, { SpellID = 389539, Amount = -40, Mult = true } } },
+    },
+    [250] = {
+        [317133] = {
+            { { SpellID = 55233, Amount = 2 } },
+            { { SpellID = 55233, Amount = 4 } },
+        },
+    },
+    [255] = {
+        [1253830] = { { { SpellID = 1250646, Amount = 2 } } },
+    },
+}
+
 local ClassDefaultTalentRanks = {
     DEATHKNIGHT = {
         [205727] = 1,
@@ -480,6 +507,51 @@ function M:GetUnitCooldown(unit, specID, classToken, abilityID, baseCooldown)
 
     cooldown = cooldown + pvpAddAmount + (cooldown * pvpMultAmount / 100)
     return math.max(cooldown, 0)
+end
+
+function M:GetUnitBuffDuration(unit, specID, classToken, abilityID, baseDuration)
+    local playerName = UnitNameUnmodified(unit)
+    if not playerName or IsSecretValue(playerName) then
+        return baseDuration
+    end
+
+    local talentRanks = GetEffectiveTalentRanks(playerName, classToken, specID)
+    if not talentRanks then
+        return baseDuration
+    end
+
+    local addAmount = 0
+    local multAmount = 0
+    local resolvedSpecID = unitTalentSpecID[playerName] or specID
+
+    local function ApplyDurationModifierTable(modifierTable)
+        if not modifierTable then
+            return
+        end
+
+        for talentSpellID, rankList in pairs(modifierTable) do
+            local rank = talentRanks[talentSpellID]
+            if rank and rank > 0 then
+                local modifiers = rankList[rank]
+                if modifiers then
+                    for _, modifier in ipairs(modifiers) do
+                        if modifier.SpellID == abilityID then
+                            if modifier.Mult then
+                                multAmount = multAmount + modifier.Amount
+                            else
+                                addAmount = addAmount + modifier.Amount
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    ApplyDurationModifierTable(ClassDurationModifiers[classToken])
+    ApplyDurationModifierTable(resolvedSpecID and SpecDurationModifiers[resolvedSpecID])
+
+    return math.max(baseDuration + addAmount + (baseDuration * multAmount / 100), 0)
 end
 
 function M:UnitHasTalent(unit, talentSpellID, callerSpecID)

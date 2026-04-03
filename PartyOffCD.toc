@@ -1,6 +1,6 @@
 ## Interface: 120001
 ## Title: PartyOffCD
-## Notes: Self-reported offensive and defensive cooldown tracker for party play
+## Notes: Party offensive/defensive cooldown tracker with aura-based detection
 ## Author: Metal
 ## Version: 0.1.1
 ## SavedVariablesPerCharacter: PartyOffCDDB
@@ -13,6 +13,7 @@ Inspector.lua
 PvPTalentSync.lua
 Talents.lua
 PartyOffCD.lua
+AuraTracker.lua
 Spells.lua
 Comms.lua
 Tracker.lua

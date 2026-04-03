@@ -360,8 +360,28 @@ PartyOffCDCore.ResolveSpecMappedValue = ResolveSpecMappedValue
 local DebugPrint = PartyOffCDCore.DebugPrint
 local CopyDefaults = PartyOffCDCore.CopyDefaults
 local SafeGetSpellInfo = PartyOffCDCore.SafeGetSpellInfo
+local IsSecretValue = PartyOffCDCore.IsSecretValue or function()
+    return false
+end
+local NormalizeSpellID = PartyOffCDCore.NormalizeSpellID or function(value)
+    if value == nil or IsSecretValue(value) then
+        return nil
+    end
+
+    local spellID = tonumber(value)
+    if type(spellID) ~= "number" or spellID <= 0 then
+        return nil
+    end
+
+    return spellID
+end
 
 function PartyOffCD:IsSpellEnabled(spellID)
+    spellID = NormalizeSpellID(spellID)
+    if not spellID then
+        return false
+    end
+
     local meta = SPELLS[spellID]
     if not meta then
         return false
@@ -722,6 +742,11 @@ end
 
 
 function PartyOffCD:GetSpellMeta(spellID)
+    spellID = NormalizeSpellID(spellID)
+    if not spellID then
+        return nil
+    end
+
     return SPELLS[spellID]
 end
 

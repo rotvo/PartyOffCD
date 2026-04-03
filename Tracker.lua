@@ -249,6 +249,7 @@ end
 function PartyOffCD:BuildRoster()
     wipe(self.roster)
     wipe(self.rosterLookup)
+    wipe(self.rosterGuidLookup)
 
     local units = {}
     local excludeSelf = self:IsTrackerExcludeSelfEnabled()
@@ -268,6 +269,7 @@ function PartyOffCD:BuildRoster()
         if UnitExists(unit) then
             local fullName = GetUnitFullName(unit)
             local shortName = UnitName(unit)
+            local guid = UnitGUID(unit)
             local _, classToken = UnitClass(unit)
             local specID = GetUnitSpecID(unit)
             local key = NormalizeName(fullName)
@@ -282,6 +284,7 @@ function PartyOffCD:BuildRoster()
                     unit = unit,
                     name = shortName,
                     fullName = fullName,
+                    guid = guid,
                     class = classToken,
                     specID = specID,
                     key = key,
@@ -296,6 +299,9 @@ function PartyOffCD:BuildRoster()
 
                 if entry.shortKey and not self.rosterLookup[entry.shortKey] then
                     self.rosterLookup[entry.shortKey] = entry
+                end
+                if entry.guid then
+                    self.rosterGuidLookup[entry.guid] = entry
                 end
 
                 if specID then
@@ -340,22 +346,51 @@ function PartyOffCD:BuildRoster()
     end
 end
 
-local function GetCompactPartyAnchor(index)
-    local frame = _G["CompactPartyFrameMember" .. index]
-    if frame and frame:IsShown() then
-        return frame
+local function DoesAnchorMatchUnit(frame, unit)
+    if not frame or not unit or not frame.IsShown or not frame:IsShown() then
+        return false
     end
 
-    local raidFrame = _G["CompactRaidFrame" .. index]
-    if raidFrame and raidFrame:IsShown() then
-        return raidFrame
+    local frameUnit = frame.unit or frame.displayedUnit
+    if not frameUnit and frame.GetAttribute then
+        frameUnit = frame:GetAttribute("unit")
+    end
+
+    return frameUnit and UnitExists(frameUnit) and UnitIsUnit(frameUnit, unit) or false
+end
+
+local function GetCompactPartyAnchor(unit, fallbackIndex)
+    if unit and UnitExists(unit) then
+        for index = 1, MAX_TRACKED_ROWS do
+            local frame = _G["CompactPartyFrameMember" .. index]
+            if DoesAnchorMatchUnit(frame, unit) then
+                return frame
+            end
+
+            local raidFrame = _G["CompactRaidFrame" .. index]
+            if DoesAnchorMatchUnit(raidFrame, unit) then
+                return raidFrame
+            end
+        end
+    end
+
+    if fallbackIndex then
+        local frame = _G["CompactPartyFrameMember" .. fallbackIndex]
+        if frame and frame:IsShown() then
+            return frame
+        end
+
+        local raidFrame = _G["CompactRaidFrame" .. fallbackIndex]
+        if raidFrame and raidFrame:IsShown() then
+            return raidFrame
+        end
     end
 
     return nil
 end
 
-function PartyOffCD:GetRosterAnchor(index)
-    return GetCompactPartyAnchor(index)
+function PartyOffCD:GetRosterAnchor(unit, fallbackIndex)
+    return GetCompactPartyAnchor(unit, fallbackIndex)
 end
 
 local function CreateCooldownAlertFrame()
@@ -457,7 +492,7 @@ function PartyOffCD:ShowCooldownUseAlert(senderKey, spellID)
         return false
     end
 
-    local anchor = self:GetRosterAnchor(rosterIndex)
+    local anchor = self:GetRosterAnchor(rosterEntry.unit, rosterIndex)
     if not anchor or not anchor:IsShown() then
         return false
     end
@@ -909,8 +944,9 @@ function PartyOffCD:AcquireIcon(parent)
         return icon
     end
 
-    icon = CreateFrame("Button", nil, parent)
+    icon = CreateFrame("Frame", nil, parent)
     icon:SetSize(ICON_SIZE, ICON_SIZE)
+    icon:EnableMouse(true)
 
     icon.texture = icon:CreateTexture(nil, "ARTWORK")
     icon.texture:SetAllPoints()
@@ -1010,38 +1046,71 @@ function PartyOffCD:GetSortedCooldowns(senderKey, onlyType)
     local senderClass = self:GetSenderClass(senderKey)
     local senderSpecID = self:GetSenderSpecID(senderKey)
     local senderUnit = self:GetSenderUnit(senderKey)
+    local candidateSpellIDs = {}
+    local seenSpellIDs = {}
 
-    for spellID in pairs(SPELLS) do
-        if self:IsSpellEnabled(spellID) then
+    local function AddCandidateSpellID(spellID)
+        spellID = tonumber(spellID)
+        if not spellID or seenSpellIDs[spellID] or not self:IsSpellEnabled(spellID) then
+            return
+        end
+
+        seenSpellIDs[spellID] = true
+        candidateSpellIDs[#candidateSpellIDs + 1] = spellID
+    end
+
+    if onlyType == "INT" then
+        for spellID, meta in pairs(SPELLS) do
+            if meta.type == "INT" then
+                AddCandidateSpellID(spellID)
+            end
+        end
+    else
+        local auraTracker = PartyOffCDCore and PartyOffCDCore.AuraTracker or nil
+        local staticSpellIDs = senderUnit and auraTracker and auraTracker.GetStaticSpellIDs and auraTracker.GetStaticSpellIDs(senderUnit) or nil
+
+        for _, spellID in ipairs(staticSpellIDs or {}) do
+            AddCandidateSpellID(spellID)
+        end
+
+        for spellID, cooldownData in pairs(senderCooldowns or {}) do
             local meta = self:GetEffectiveMeta(senderKey, spellID)
-            local passesType = meta and ((onlyType and meta.type == onlyType) or (not onlyType and meta.type ~= "INT"))
-            if passesType and not onlyType and meta and not self:IsTrackerTypeVisible(meta.type) then
-                passesType = false
+            local endTime = cooldownData and (type(cooldownData) == "table" and cooldownData.endTime or cooldownData) or 0
+            if meta and meta.type ~= "INT" and endTime > now then
+                AddCandidateSpellID(spellID)
             end
-            local passesClassAndSpec = passesType and self:DoesMetaMatchUnit(meta, senderClass, senderSpecID, senderUnit)
+        end
+    end
 
-            if passesType and passesClassAndSpec then
-                local cooldownData = senderCooldowns and senderCooldowns[spellID] or nil
-                local endTime = cooldownData and (type(cooldownData) == "table" and cooldownData.endTime or cooldownData) or 0
-                local duration = cooldownData and (type(cooldownData) == "table" and cooldownData.duration or meta.cd) or meta.cd
-                local remaining = endTime - now
-                local isActive = remaining > 0
+    for _, spellID in ipairs(candidateSpellIDs) do
+        local meta = self:GetEffectiveMeta(senderKey, spellID)
+        local passesType = meta and ((onlyType and meta.type == onlyType) or (not onlyType and meta.type ~= "INT"))
+        if passesType and not onlyType and meta and not self:IsTrackerTypeVisible(meta.type) then
+            passesType = false
+        end
+        local passesClassAndSpec = passesType and self:DoesMetaMatchUnit(meta, senderClass, senderSpecID, senderUnit)
 
-                if not isActive then
-                    remaining = 0
-                    endTime = 0
-                    duration = meta.cd
-                end
+        if passesType and passesClassAndSpec then
+            local cooldownData = senderCooldowns and senderCooldowns[spellID] or nil
+            local endTime = cooldownData and (type(cooldownData) == "table" and cooldownData.endTime or cooldownData) or 0
+            local duration = cooldownData and (type(cooldownData) == "table" and cooldownData.duration or meta.cd) or meta.cd
+            local remaining = endTime - now
+            local isActive = remaining > 0
 
-                entries[#entries + 1] = {
-                    spellID = spellID,
-                    endTime = endTime,
-                    remaining = remaining,
-                    meta = meta,
-                    duration = duration,
-                    isActive = isActive,
-                }
+            if not isActive then
+                remaining = 0
+                endTime = 0
+                duration = meta.cd
             end
+
+            entries[#entries + 1] = {
+                spellID = spellID,
+                endTime = endTime,
+                remaining = remaining,
+                meta = meta,
+                duration = duration,
+                isActive = isActive,
+            }
         end
     end
 
@@ -1071,10 +1140,10 @@ function PartyOffCD:GetSortedCooldowns(senderKey, onlyType)
     return entries
 end
 
-function PartyOffCD:AnchorRow(row, index)
+function PartyOffCD:AnchorRow(row, rosterEntry)
     row:ClearAllPoints()
 
-    local target = GetCompactPartyAnchor(index)
+    local target = GetCompactPartyAnchor(rosterEntry and rosterEntry.unit, row.index)
     local attach = self:GetTrackerAttach()
     local offsetX = self:GetTrackerOffsetX()
     local offsetY = self:GetTrackerOffsetY()
@@ -1099,10 +1168,10 @@ function PartyOffCD:AnchorRow(row, index)
         row.layoutAttach = attach
         row:SetFrameStrata(self.trackerFrame:GetFrameStrata() or "MEDIUM")
         row:SetFrameLevel((self.trackerFrame:GetFrameLevel() or 1) + 1)
-        if index == 1 then
+        if row.index == 1 then
             row:SetPoint("TOPLEFT", self.trackerFrame, "TOPLEFT", math.max(0, offsetX + 8), -math.max(0, -offsetY))
         else
-            row:SetPoint("TOPLEFT", self.rows[index - 1], "BOTTOMLEFT", 0, -8)
+            row:SetPoint("TOPLEFT", self.rows[row.index - 1], "BOTTOMLEFT", 0, -8)
         end
     end
 end
@@ -1125,7 +1194,7 @@ function PartyOffCD:RenderRow(row, rosterEntry)
     end
 
     row:Show()
-    self:AnchorRow(row, row.index)
+    self:AnchorRow(row, rosterEntry)
 
     local attach = row.layoutAttach or self:GetTrackerAttach()
     local horizontalAttach = attach == "LEFT" or attach == "RIGHT" or attach == "CENTER"
@@ -1641,8 +1710,9 @@ function PartyOffCD:AcquireMissingBuffIcon(parent)
         return iconFrame
     end
 
-    iconFrame = CreateFrame("Button", nil, parent)
+    iconFrame = CreateFrame("Frame", nil, parent)
     iconFrame:SetSize(MISSING_BUFF_ICON_SIZE, MISSING_BUFF_ICON_SIZE + 16)
+    iconFrame:EnableMouse(true)
 
     local iconBg = iconFrame:CreateTexture(nil, "BACKGROUND")
     iconBg:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", 0, 0)
