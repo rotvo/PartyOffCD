@@ -6,6 +6,9 @@ _G.PartyOffCDCore = PartyOffCDCore
 local PartyOffCD = _G.PartyOffCD
 assert(PartyOffCD, "PartyOffCD: frame missing before loading AuraTracker.lua")
 
+-- Canonical OFF/DEF auto-tracking lives here.
+-- Keep this aligned with the MiniCC-style aura/evidence model documented in AI_CONTEXT.md.
+
 local tolerance = 0.5
 local castWindow = 0.15
 local evidenceTolerance = 0.15
@@ -52,6 +55,9 @@ local auraRules = {
         [63] = {
             { BuffDuration = 10, Cooldown = 120, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 190319, MinDuration = true },
         },
+        [64] = {
+            { BuffDuration = 25, Cooldown = 120, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 12472, MinDuration = true },
+        },
         [71] = {
             { BuffDuration = 8, Cooldown = 120, BigDefensive = true, ExternalDefensive = false, Important = true, RequiresEvidence = "Cast", SpellID = 118038 },
             { BuffDuration = 20, Cooldown = 90, Important = true, ExternalDefensive = false, BigDefensive = false, RequiresEvidence = "Cast", SpellID = 107574, MinDuration = true, RequiresTalent = 107574 },
@@ -60,6 +66,7 @@ local auraRules = {
             { BuffDuration = 8, Cooldown = 120, BigDefensive = true, ExternalDefensive = false, Important = true, RequiresEvidence = "Cast", SpellID = 184364 },
             { BuffDuration = 11, Cooldown = 120, BigDefensive = true, ExternalDefensive = false, Important = true, RequiresEvidence = "Cast", SpellID = 184364 },
             { BuffDuration = 20, Cooldown = 90, Important = true, ExternalDefensive = false, BigDefensive = false, RequiresEvidence = "Cast", SpellID = 107574, MinDuration = true, RequiresTalent = 107574 },
+            { BuffDuration = 12, Cooldown = 90, Important = true, ExternalDefensive = false, BigDefensive = false, RequiresEvidence = "Cast", SpellID = 1719, MinDuration = true },
         },
         [73] = {
             { BuffDuration = 8, Cooldown = 180, BigDefensive = true, ExternalDefensive = false, Important = true, RequiresEvidence = "Cast", SpellID = 871 },
@@ -79,12 +86,14 @@ local auraRules = {
         [257] = {
             { BuffDuration = 10, Cooldown = 180, ExternalDefensive = true, BigDefensive = false, Important = false, CanCancelEarly = true, RequiresEvidence = "Cast", SpellID = 47788 },
             { BuffDuration = 5, Cooldown = 180, Important = true, BigDefensive = false, ExternalDefensive = false, CanCancelEarly = true, RequiresEvidence = "Cast", SpellID = 64843 },
+            { BuffDuration = 20, Cooldown = 120, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 200183, MinDuration = true },
         },
         [258] = {
             { BuffDuration = 6, Cooldown = 120, BigDefensive = true, ExternalDefensive = false, Important = true, CanCancelEarly = true, RequiresEvidence = "Cast", SpellID = 47585 },
             { BuffDuration = 20, Cooldown = 120, Important = true, ExternalDefensive = false, BigDefensive = false, RequiresEvidence = "Cast", SpellID = 228260 },
         },
         [102] = {
+            { BuffDuration = 15, Cooldown = 180, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 194223, MinDuration = true, ExcludeIfTalent = 102560 },
             { BuffDuration = 20, Cooldown = 180, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", MinDuration = true, SpellID = 102560 },
         },
         [103] = {
@@ -110,16 +119,35 @@ local auraRules = {
         [581] = {
             { BuffDuration = 12, Cooldown = 60, BigDefensive = true, ExternalDefensive = false, Important = false, MinDuration = true, RequiresEvidence = "Cast", SpellID = 204021 },
         },
+        [253] = {
+            { BuffDuration = 15, Cooldown = 90, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 19574, MinDuration = true },
+        },
         [254] = {
             { BuffDuration = 15, Cooldown = 120, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 288613 },
             { BuffDuration = 17, Cooldown = 120, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 288613 },
         },
         [255] = {
+            { BuffDuration = 20, Cooldown = 120, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 266779, MinDuration = true },
             { BuffDuration = 8, Cooldown = 90, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 1250646 },
             { BuffDuration = 10, Cooldown = 90, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 1250646 },
         },
+        [260] = {
+            { BuffDuration = 20, Cooldown = 180, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 13750, MinDuration = true },
+        },
         [261] = {
             { BuffDuration = 16, Cooldown = 90, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 121471 },
+            { BuffDuration = 18, Cooldown = 90, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 121471 },
+            { BuffDuration = 20, Cooldown = 90, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 121471 },
+        },
+        [262] = {
+            { BuffDuration = 15, Cooldown = 60, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 191634, CanCancelEarly = true },
+            { BuffDuration = 15, Cooldown = 180, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 114050, MinDuration = true },
+        },
+        [265] = {
+            { BuffDuration = 20, Cooldown = 120, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 113860, MinDuration = true },
+        },
+        [269] = {
+            { BuffDuration = 15, Cooldown = 90, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 137639, CanCancelEarly = true },
         },
         [1467] = {
             { BuffDuration = 18, Cooldown = 120, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", MinDuration = true, SpellID = 375087 },
@@ -173,6 +201,7 @@ local auraRules = {
             { BuffDuration = 8, Cooldown = 180, BigDefensive = true, ExternalDefensive = false, Important = true, RequiresEvidence = "Cast", SpellID = 104773 },
         },
         PRIEST = {
+            { BuffDuration = 20, Cooldown = 120, Important = true, BigDefensive = false, ExternalDefensive = false, RequiresEvidence = "Cast", SpellID = 10060, MinDuration = true },
             { BuffDuration = 10, Cooldown = 90, BigDefensive = true, ExternalDefensive = false, Important = true, RequiresEvidence = "Cast", SpellID = 19236 },
         },
         EVOKER = {
@@ -377,6 +406,19 @@ local function AuraTypesSignature(auraTypes)
     return signature
 end
 
+local function ResolveAuraDuration(auraData)
+    if not auraData then
+        return nil
+    end
+
+    local duration = tonumber(auraData.duration or auraData.Duration or auraData.durationSeconds)
+    if duration and duration > 0 then
+        return duration
+    end
+
+    return nil
+end
+
 local function BuildCurrentAuraIDs(unit)
     local currentIDs = {}
     if not (C_UnitAuras and C_UnitAuras.GetUnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID) then
@@ -390,6 +432,7 @@ local function BuildCurrentAuraIDs(unit)
             if id then
                 currentIDs[id] = currentIDs[id] or { AuraTypes = {} }
                 currentIDs[id].AuraTypes[auraKey] = true
+                currentIDs[id].BuffDuration = currentIDs[id].BuffDuration or ResolveAuraDuration(auraData)
                 if not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, id, "HELPFUL|IMPORTANT") then
                     currentIDs[id].AuraTypes.IMPORTANT = true
                 end
@@ -406,6 +449,7 @@ local function BuildCurrentAuraIDs(unit)
         if id then
             currentIDs[id] = currentIDs[id] or { AuraTypes = {} }
             currentIDs[id].AuraTypes.IMPORTANT = true
+            currentIDs[id].BuffDuration = currentIDs[id].BuffDuration or ResolveAuraDuration(auraData)
         end
     end
 
@@ -422,6 +466,7 @@ local function TrackNewAura(unit, trackedAuras, id, info, now)
     trackedAuras[id] = {
         StartTime = now,
         AuraTypes = info.AuraTypes,
+        BuffDuration = info.BuffDuration,
         Evidence = evidence,
         CastSnapshot = castSnapshot,
     }
@@ -502,6 +547,55 @@ local function FindBestCandidate(entryUnit, tracked, measuredDuration)
     end
 
     return bestRule, bestUnit
+end
+
+local function GetActiveAuras(unit)
+    if not unit or not UnitExists(unit) or UnitCanAttack("player", unit) then
+        return {}
+    end
+
+    local results = {}
+    local seen = {}
+    local observedAuraState = PartyOffCD.observedAuraState or nil
+    if not observedAuraState then
+        return results
+    end
+
+    for observedUnit, unitState in pairs(observedAuraState) do
+        local trackedAuras = unitState and unitState.trackedAuras or nil
+        if trackedAuras then
+            for _, tracked in pairs(trackedAuras) do
+                local measuredDuration = tracked and tracked.BuffDuration or nil
+                if measuredDuration and measuredDuration > 0 then
+                    local rule, ruleUnit = FindBestCandidate(observedUnit, tracked, measuredDuration)
+                    if rule and ruleUnit == unit and rule.SpellID and not seen[rule.SpellID] then
+                        seen[rule.SpellID] = true
+                        results[#results + 1] = {
+                            SpellID = rule.SpellID,
+                            StartTime = tracked.StartTime,
+                            BuffDuration = measuredDuration,
+                        }
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(results, function(a, b)
+        return (a.StartTime or 0) > (b.StartTime or 0)
+    end)
+
+    return results
+end
+
+local function GetActiveSpellIDs(unit)
+    local results = {}
+    for _, aura in ipairs(GetActiveAuras(unit)) do
+        if aura and aura.SpellID then
+            results[#results + 1] = aura.SpellID
+        end
+    end
+    return results
 end
 
 local function CommitRule(tracked, rule, ruleUnit)
@@ -613,4 +707,6 @@ function PartyOffCD:HandleObservedUnitAuraChanged(unit, updateInfo)
 end
 
 PartyOffCDCore.AuraTracker = PartyOffCDCore.AuraTracker or {}
+PartyOffCDCore.AuraTracker.GetActiveAuras = GetActiveAuras
 PartyOffCDCore.AuraTracker.GetStaticSpellIDs = GetStaticSpellIDs
+PartyOffCDCore.AuraTracker.GetActiveSpellIDs = GetActiveSpellIDs

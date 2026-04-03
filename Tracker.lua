@@ -23,7 +23,6 @@ local DB_DEFAULTS = PartyOffCDCore.DEFAULTS
 local TRACKER_TYPE_GAP = ICON_SPACING + 8
 local MISSING_BUFF_ICON_SIZE = 36
 local MISSING_BUFF_ICON_SPACING = 8
-local MAX_AURA_SCAN = 255
 local COOLDOWN_ALERT_DURATION = 0.9
 local COOLDOWN_ALERT_HOLD = 0.45
 local MISSING_BUFFS = {
@@ -113,74 +112,10 @@ local function ResolveMissingBuffSpellID(definition)
     return nil
 end
 
-local function ToSafeNumber(value)
-    if value == nil then
-        return nil
-    end
-
-    local ok, parsed = pcall(function()
-        return tonumber(tostring(value))
-    end)
-    if ok then
-        return parsed
-    end
-
-    return nil
-end
-
-local function AuraDataMatches(auraData, targetSpellID)
-    if not auraData then
-        return false
-    end
-
-    local auraSpellID = ToSafeNumber(auraData.spellId or auraData.spellID)
-    if targetSpellID and auraSpellID and auraSpellID == targetSpellID then
-        return true
-    end
-
-    return false
-end
-
-local function UnitHasBuffFromAuraDataIndex(unit, targetSpellID)
-    if not C_UnitAuras then
-        return false
-    end
-
-    if C_UnitAuras.GetBuffDataByIndex then
-        for index = 1, MAX_AURA_SCAN do
-            local ok, auraData = pcall(C_UnitAuras.GetBuffDataByIndex, unit, index)
-            if not ok then
-                break
-            end
-            if not auraData then
-                break
-            end
-            if AuraDataMatches(auraData, targetSpellID) then
-                return true
-            end
-        end
-    end
-
-    if C_UnitAuras.GetAuraDataByIndex then
-        for index = 1, MAX_AURA_SCAN do
-            local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, unit, index, "HELPFUL")
-            if not ok then
-                break
-            end
-            if not auraData then
-                break
-            end
-            if AuraDataMatches(auraData, targetSpellID) then
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
 local function UnitHasBuffFromSpellID(unit, spellID)
-    local targetSpellID = ToSafeNumber(spellID)
+    -- Missing-buff checks are separate from OFF/DEF cooldown attribution. Keep this
+    -- minimal so future work does not treat old aura-scan fallbacks as a valid model.
+    local targetSpellID = tonumber(spellID)
     if not unit or not UnitExists(unit) or not targetSpellID then
         return false
     end
@@ -196,36 +131,6 @@ local function UnitHasBuffFromSpellID(unit, spellID)
         local ok, aura = pcall(AuraUtil.FindAuraBySpellID, targetSpellID, unit, "HELPFUL")
         if ok and aura then
             return true
-        end
-    end
-
-    if UnitHasBuffFromAuraDataIndex(unit, targetSpellID) then
-        return true
-    end
-
-    if UnitAura then
-        for index = 1, MAX_AURA_SCAN do
-            local auraName, _, _, _, _, _, _, _, _, auraSpellID = UnitAura(unit, index, "HELPFUL")
-            if not auraName then
-                break
-            end
-            auraSpellID = ToSafeNumber(auraSpellID)
-            if auraSpellID and auraSpellID == targetSpellID then
-                return true
-            end
-        end
-    end
-
-    if UnitBuff then
-        for index = 1, MAX_AURA_SCAN do
-            local auraName, _, _, _, _, _, _, _, _, auraSpellID = UnitBuff(unit, index)
-            if not auraName then
-                break
-            end
-            auraSpellID = ToSafeNumber(auraSpellID)
-            if auraSpellID and auraSpellID == targetSpellID then
-                return true
-            end
         end
     end
 
@@ -952,6 +857,22 @@ function PartyOffCD:AcquireIcon(parent)
     icon.texture:SetAllPoints()
     icon.texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
+    icon.activeGlow = icon:CreateTexture(nil, "OVERLAY")
+    icon.activeGlow:SetPoint("CENTER")
+    icon.activeGlow:SetBlendMode("ADD")
+    icon.activeGlow:SetTexture([[Interface\SpellActivationOverlay\IconAlert]])
+    icon.activeGlow:SetTexCoord(0.00781250, 0.50781250, 0.27734375, 0.52734375)
+    icon.activeGlow:SetVertexColor(1, 0.82, 0.12, 0.85)
+    icon.activeGlow:Hide()
+
+    icon.activeGlowOver = icon:CreateTexture(nil, "OVERLAY")
+    icon.activeGlowOver:SetPoint("CENTER")
+    icon.activeGlowOver:SetBlendMode("ADD")
+    icon.activeGlowOver:SetTexture([[Interface\SpellActivationOverlay\IconAlert]])
+    icon.activeGlowOver:SetTexCoord(0.00781250, 0.50781250, 0.53515625, 0.78515625)
+    icon.activeGlowOver:SetVertexColor(1, 0.92, 0.35, 0.72)
+    icon.activeGlowOver:Hide()
+
     icon.cooldown = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
     icon.cooldown:SetAllPoints()
     if icon.cooldown.SetDrawSwipe then
@@ -993,6 +914,49 @@ function PartyOffCD:AcquireIcon(parent)
     return icon
 end
 
+local function CreateActiveAuraFrame()
+    local frame = CreateFrame("Frame", nil, UIParent)
+    frame:SetFrameStrata("HIGH")
+    frame:Hide()
+
+    frame.background = frame:CreateTexture(nil, "BACKGROUND")
+    frame.background:SetAllPoints()
+    frame.background:SetColorTexture(0, 0, 0, 0)
+
+    frame.icon = frame:CreateTexture(nil, "ARTWORK")
+    frame.icon:SetAllPoints()
+    frame.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    frame.cooldown = CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate")
+    frame.cooldown:SetAllPoints()
+    if frame.cooldown.SetDrawSwipe then
+        frame.cooldown:SetDrawSwipe(false)
+    end
+    if frame.cooldown.SetSwipeColor then
+        frame.cooldown:SetSwipeColor(0, 0, 0, 0)
+    end
+    if frame.cooldown.SetDrawBling then
+        frame.cooldown:SetDrawBling(false)
+    end
+    if frame.cooldown.SetHideCountdownNumbers then
+        frame.cooldown:SetHideCountdownNumbers(true)
+    end
+
+    return frame
+end
+
+function PartyOffCD:HideRowActiveAura(row)
+    if not row or not row.activeAuraFrame then
+        return
+    end
+
+    row.activeAuraFrame:Hide()
+    row.activeAuraFrame:ClearAllPoints()
+    row.activeAuraFrame.spellID = nil
+    row.activeAuraFrame.icon:SetTexture(nil)
+    row.activeAuraFrame.cooldown:SetCooldown(0, 0)
+end
+
 function PartyOffCD:ReleaseRowIcons(row)
     if not row.icons then
         return
@@ -1009,6 +973,12 @@ function PartyOffCD:ReleaseRowIcons(row)
         if icon.texture.SetDesaturated then
             icon.texture:SetDesaturated(false)
         end
+        if icon.activeGlow then
+            icon.activeGlow:Hide()
+        end
+        if icon.activeGlowOver then
+            icon.activeGlowOver:Hide()
+        end
         icon.cooldown:SetCooldown(0, 0)
         icon.timeText:SetText("")
         icon.typeText:SetText("")
@@ -1016,6 +986,7 @@ function PartyOffCD:ReleaseRowIcons(row)
     end
 
     wipe(row.icons)
+    self:HideRowActiveAura(row)
 end
 
 function PartyOffCD:CreateRow(index)
@@ -1030,9 +1001,39 @@ function PartyOffCD:CreateRow(index)
     row.label:SetJustifyH("RIGHT")
     row.label:SetWidth(90)
     row.label:Hide()
+    row.activeAuraFrame = CreateActiveAuraFrame()
 
     self.rows[index] = row
     return row
+end
+
+function PartyOffCD:GetActiveAuraEntry(senderKey, onlyType)
+    local senderClass = self:GetSenderClass(senderKey)
+    local senderSpecID = self:GetSenderSpecID(senderKey)
+    local senderUnit = self:GetSenderUnit(senderKey)
+    local auraTracker = PartyOffCDCore and PartyOffCDCore.AuraTracker or nil
+    local activeAuras = senderUnit and auraTracker and auraTracker.GetActiveAuras and auraTracker.GetActiveAuras(senderUnit) or nil
+    local bestEntry = nil
+
+    for _, aura in ipairs(activeAuras or {}) do
+        local spellID = aura and tonumber(aura.SpellID)
+        local meta = spellID and self:GetEffectiveMeta(senderKey, spellID) or nil
+        if meta and self:IsSpellEnabled(spellID) and ((not onlyType) or meta.type == onlyType) then
+            if self:DoesMetaMatchUnit(meta, senderClass, senderSpecID, senderUnit) then
+                local candidate = {
+                    spellID = spellID,
+                    meta = meta,
+                    startTime = tonumber(aura.StartTime) or 0,
+                    duration = tonumber(aura.BuffDuration) or 0,
+                }
+                if not bestEntry or candidate.startTime > bestEntry.startTime then
+                    bestEntry = candidate
+                end
+            end
+        end
+    end
+
+    return bestEntry
 end
 
 function PartyOffCD:GetRow(index)
@@ -1048,6 +1049,7 @@ function PartyOffCD:GetSortedCooldowns(senderKey, onlyType)
     local senderUnit = self:GetSenderUnit(senderKey)
     local candidateSpellIDs = {}
     local seenSpellIDs = {}
+    local activeAuraSpellIDSet = {}
 
     local function AddCandidateSpellID(spellID)
         spellID = tonumber(spellID)
@@ -1068,9 +1070,18 @@ function PartyOffCD:GetSortedCooldowns(senderKey, onlyType)
     else
         local auraTracker = PartyOffCDCore and PartyOffCDCore.AuraTracker or nil
         local staticSpellIDs = senderUnit and auraTracker and auraTracker.GetStaticSpellIDs and auraTracker.GetStaticSpellIDs(senderUnit) or nil
+        local activeAuraSpellIDs = senderUnit and auraTracker and auraTracker.GetActiveSpellIDs and auraTracker.GetActiveSpellIDs(senderUnit) or nil
 
         for _, spellID in ipairs(staticSpellIDs or {}) do
             AddCandidateSpellID(spellID)
+        end
+
+        for _, spellID in ipairs(activeAuraSpellIDs or {}) do
+            spellID = tonumber(spellID)
+            if spellID then
+                activeAuraSpellIDSet[spellID] = true
+                AddCandidateSpellID(spellID)
+            end
         end
 
         for spellID, cooldownData in pairs(senderCooldowns or {}) do
@@ -1110,6 +1121,7 @@ function PartyOffCD:GetSortedCooldowns(senderKey, onlyType)
                 meta = meta,
                 duration = duration,
                 isActive = isActive,
+                isAuraActive = (not isActive) and meta.type == "OFF" and activeAuraSpellIDSet[spellID] == true,
             }
         end
     end
@@ -1189,12 +1201,31 @@ function PartyOffCD:RenderRow(row, rosterEntry)
     end
 
     if not entries or #entries == 0 then
+        self:HideRowActiveAura(row)
         row:Hide()
         return
     end
 
     row:Show()
     self:AnchorRow(row, rosterEntry)
+    self:HideRowActiveAura(row)
+
+    local anchor = self:GetRosterAnchor(rosterEntry.unit, row.index)
+    local activeDefensive = self:GetActiveAuraEntry(rosterEntry.key, "DEF")
+    if activeDefensive and anchor and anchor:IsShown() then
+        local activeFrame = row.activeAuraFrame
+        local _, activeTexture = SafeGetSpellInfo(activeDefensive.spellID)
+        local size = math.max(18, math.floor(math.min(anchor:GetWidth(), anchor:GetHeight()) * 0.56))
+        activeFrame:SetParent(UIParent)
+        activeFrame:ClearAllPoints()
+        activeFrame:SetPoint("CENTER", anchor, "CENTER", 0, 0)
+        activeFrame:SetFrameLevel((anchor:GetFrameLevel() or 1) + 12)
+        activeFrame:SetSize(size, size)
+        activeFrame.spellID = activeDefensive.spellID
+        activeFrame.icon:SetTexture(activeTexture or 134400)
+        activeFrame.cooldown:SetCooldown(activeDefensive.startTime, math.max(0, activeDefensive.duration))
+        activeFrame:Show()
+    end
 
     local attach = row.layoutAttach or self:GetTrackerAttach()
     local horizontalAttach = attach == "LEFT" or attach == "RIGHT" or attach == "CENTER"
@@ -1245,6 +1276,8 @@ function PartyOffCD:RenderRow(row, rosterEntry)
         if icon.cooldown.SetReverse then
             icon.cooldown:SetReverse(self:IsTrackerReverseCooldownEnabled())
         end
+        local showAuraGlow = entry.isAuraActive == true
+        local glowSize = math.floor(iconSize * 1.7)
         if entry.isActive then
             icon:SetAlpha(0.95)
             icon.texture:SetVertexColor(0.62, 0.62, 0.62, 1)
@@ -1261,6 +1294,14 @@ function PartyOffCD:RenderRow(row, rosterEntry)
             end
             icon.timeText:SetText("")
             icon.cooldown:SetCooldown(0, 0)
+        end
+        if icon.activeGlow then
+            icon.activeGlow:SetSize(glowSize, glowSize)
+            icon.activeGlow:SetShown(showAuraGlow)
+        end
+        if icon.activeGlowOver then
+            icon.activeGlowOver:SetSize(glowSize, glowSize)
+            icon.activeGlowOver:SetShown(showAuraGlow)
         end
 
         local iconX = 0
@@ -1779,6 +1820,7 @@ function PartyOffCD:HideAllTrackerFrames()
     for _, row in ipairs(self.rows) do
         if row then
             self:ReleaseRowIcons(row)
+            self:HideRowActiveAura(row)
             row:Hide()
         end
     end

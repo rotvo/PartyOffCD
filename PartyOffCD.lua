@@ -707,7 +707,11 @@ function PartyOffCD:HandleObservedSenderSpellcast(sender, spellID, senderTime, u
         return false
     end
 
-    if effectiveMeta.type ~= "INT" then
+    if effectiveMeta.type == "OFF" then
+        if self:IsTrackerTypeVisible("OFF") then
+            self:ShowCooldownUseAlert(senderKey, spellID)
+        end
+    elseif effectiveMeta.type == "INT" then
         self:ShowCooldownUseAlert(senderKey, spellID)
     end
     self:RefreshTracker()
@@ -959,50 +963,5 @@ end)
 
 PartyOffCD:RegisterEvent("PLAYER_LOGIN")
 
---[[
-PartyOffCD notes:
-
-1) How to extend the spell table
-   Add a new entry to SPELLS using:
-   [spellID] = { cd = <seconds>, type = "OFF" / "DEF" / "INT", class = "<CLASS_TOKEN>" }
-   Example:
-   [31884] = { cd = 120, type = "OFF", class = "PALADIN" }
-   Optional spec filter:
-   specs = { "FROST" } or specs = { "ARMS", "FURY" }
-   New spells appear automatically in the config panel under their class.
-   The config panel can also overwrite existing base spells with your own CD/type/class values.
-   Overrides are stored per character and are broadcast to party members automatically.
-
-2) Tracking model
-   Offensive and defensive cooldowns are inferred from aura appearance/removal plus evidence
-   such as cast, debuff, shield, and unit-flag events. Only spells with explicit rules in
-   AuraTracker.lua auto-track with this model.
-   Interrupts still use combat-log tracking because they do not leave a tracked aura.
-
-3) Slash examples
-   /pocd use 31884
-   /pocd timer 31884 45
-   /pocd use 97462
-   /pocd use 190319
-   /pocd test
-   /pocd config
-
-4) Minimap and config
-   Click the minimap button opens the config panel.
-   Drag the minimap button to move it around the minimap.
-   The minimap icon is always enabled.
-   Each class row has a + button to add a new spell to that class.
-   Pick SpellID, CD, choose OFF/DEF/INT, then Save.
-   Custom spells are stored per character and synced to the group.
-   Each spell row has an Edit button.
-   Click Edit, type your personal CD in seconds, then click Save.
-   Save stores it in your per-character SavedVariables and syncs it to the group.
-   When a party member sends an override, you will see a short notification.
-
-5) Manual timer adjustment
-   Use /pocd timer <spellID> <remainingSeconds> to correct an active timer.
-   Example: /pocd timer 31884 45
-   This updates your own running timer and notifies the group.
-   The addon also requests and rebroadcasts custom overrides whenever you join or change group.
-   The tracker shows aura-supported offensive/defensive spells plus any active manual timers.
-]]
+-- Developer note: OFF/DEF auto-tracking follows the MiniCC-style AuraTracker pipeline only.
+-- See AI_CONTEXT.md before changing detection behavior or adding new auto-tracked cooldowns.
