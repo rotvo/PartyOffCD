@@ -24,9 +24,19 @@ local INTERRUPT_ICON_SIZE = 18
 local FALLBACK_X = 210
 local FALLBACK_Y = 120
 local MINIMAP_RADIUS = 96
+local SHARED_HEALTH_POTION_SPELL_ID = 1234768
+local TRACKED_HEALTH_POTION_ITEM_IDS = {
+    241304,
+    241305,
+}
+local SPELL_ID_ALIASES = {
+    [241304] = SHARED_HEALTH_POTION_SPELL_ID,
+    [241305] = SHARED_HEALTH_POTION_SPELL_ID,
+}
 -- Interrupts still need cast/combat-log tracking because they do not produce a tracked aura.
 local COMBAT_LOG_TRACKED_SUBEVENTS = {
     SPELL_CAST_SUCCESS = true,
+    SPELL_HEAL = true,
     SPELL_INTERRUPT = true,
 }
 
@@ -61,6 +71,7 @@ PartyOffCD.talentTrackerBound = false
 PartyOffCD.cooldownAlerts = {}
 PartyOffCD.specInspectorInitialized = false
 PartyOffCD.observedAuraState = {}
+PartyOffCD.lastTrackedItemCooldowns = {}
 
 local function DebugPrint(message)
     print("|cff33ff99PartyOffCD|r: " .. tostring(message))
@@ -94,6 +105,36 @@ local function SafeGetSpellInfo(spellID)
     return name, icon
 end
 
+local function SafeGetItemIcon(itemID)
+    itemID = tonumber(itemID)
+    if not itemID or itemID <= 0 or type(GetItemInfoInstant) ~= "function" then
+        return nil
+    end
+
+    local _, _, _, _, _, _, _, _, _, icon = GetItemInfoInstant(itemID)
+    return icon
+end
+
+local function SafeGetDisplayInfo(spellID, meta)
+    local forcedIcon = tonumber(meta and meta.displayIconID or nil)
+    if forcedIcon and forcedIcon > 0 then
+        local name = SafeGetSpellInfo(spellID)
+        return name, forcedIcon
+    end
+
+    local name, icon = SafeGetSpellInfo(spellID)
+    if icon then
+        return name, icon
+    end
+
+    local itemIcon = SafeGetItemIcon(meta and meta.displayItemID or nil)
+    if itemIcon then
+        return name, itemIcon
+    end
+
+    return name, icon
+end
+
 local function TrySafeNumber(value)
     if value == nil then
         return nil
@@ -123,6 +164,10 @@ local function NormalizeSpellID(value)
         return nil
     end
 
+    if SPELL_ID_ALIASES[spellID] then
+        return SPELL_ID_ALIASES[spellID]
+    end
+
     return spellID
 end
 
@@ -135,6 +180,23 @@ local function SafeGetSpellCooldown(spellID)
     end
 
     local startTime, duration, enabled = GetSpellCooldown(spellID)
+    return startTime, duration, enabled ~= 0
+end
+
+local function SafeGetItemCooldown(itemID)
+    if C_Item and C_Item.GetItemCooldown then
+        local ok, a, b, c = pcall(C_Item.GetItemCooldown, itemID)
+        if ok then
+            if type(a) == "table" then
+                return a.startTime, a.duration, true
+            end
+            if a ~= nil or b ~= nil or c ~= nil then
+                return a, b, c ~= 0
+            end
+        end
+    end
+
+    local startTime, duration, enabled = GetItemCooldown(itemID)
     return startTime, duration, enabled ~= 0
 end
 
@@ -282,6 +344,7 @@ PartyOffCDCore.DB_DEFAULTS = DB_DEFAULTS
 PartyOffCDCore.DebugPrint = DebugPrint
 PartyOffCDCore.CopyDefaults = CopyDefaults
 PartyOffCDCore.SafeGetSpellInfo = SafeGetSpellInfo
+PartyOffCDCore.SafeGetDisplayInfo = SafeGetDisplayInfo
 PartyOffCDCore.SafeGetSpellCooldown = SafeGetSpellCooldown
 PartyOffCDCore.GetUnitSpecID = GetUnitSpecID
 PartyOffCDCore.FormatRemaining = FormatRemaining
@@ -433,6 +496,7 @@ function PartyOffCD:HandleContextChanged()
         self:BroadcastLocalOverrides()
     end
     self:RefreshConfigPanel()
+    self:RefreshTrackedConsumableCooldowns(true)
     self:RefreshTracker()
 end
 
@@ -574,6 +638,48 @@ function PartyOffCD:GetLocalCooldownRemaining(spellID)
     return remaining, duration, true
 end
 
+function PartyOffCD:GetLocalItemCooldownRemaining(itemID)
+    local startTime, duration, enabled = SafeGetItemCooldown(itemID)
+    startTime = TrySafeNumber(startTime)
+    duration = TrySafeNumber(duration)
+    if not enabled then
+        return 0, duration or 0, true
+    end
+
+    if not startTime or not duration then
+        return nil, nil, false
+    end
+
+    local isShortCooldown = false
+    local okShort = pcall(function()
+        isShortCooldown = (duration <= 1.5 or startTime <= 0)
+    end)
+    if (not okShort) or isShortCooldown then
+        if not okShort then
+            return nil, nil, false
+        end
+        return 0, duration, true
+    end
+
+    local remaining = 0
+    local okRemaining = pcall(function()
+        remaining = (startTime + duration) - GetTime()
+    end)
+    if not okRemaining then
+        return nil, nil, false
+    end
+
+    remaining = TrySafeNumber(remaining)
+    if not remaining then
+        return nil, nil, false
+    end
+    if remaining < 0 then
+        remaining = 0
+    end
+
+    return remaining, duration, true
+end
+
 function PartyOffCD:StartCooldown(senderKey, spellID, senderTime)
     if not self:IsEnabledForCurrentContext() then
         return false
@@ -653,6 +759,35 @@ function PartyOffCD:CanReportLocalUse(spellID)
     end
 
     return true, 0
+end
+
+function PartyOffCD:RefreshTrackedConsumableCooldowns(seedOnly)
+    local bestRemaining = 0
+    for _, itemID in ipairs(TRACKED_HEALTH_POTION_ITEM_IDS) do
+        local remaining = self:GetLocalItemCooldownRemaining(itemID)
+        if remaining and remaining > bestRemaining then
+            bestRemaining = remaining
+        end
+    end
+
+    local previous = self.lastTrackedItemCooldowns[SHARED_HEALTH_POTION_SPELL_ID] or 0
+    self.lastTrackedItemCooldowns[SHARED_HEALTH_POTION_SPELL_ID] = bestRemaining
+
+    if seedOnly or not self:IsEnabledForCurrentContext() then
+        return
+    end
+
+    if bestRemaining > 1 and previous <= 0.2 then
+        local playerKey = self:GetPlayerCanonical()
+        if not playerKey or self:ShouldIgnoreDuplicate(playerKey, SHARED_HEALTH_POTION_SPELL_ID) then
+            return
+        end
+
+        if self:StartCooldown(playerKey, SHARED_HEALTH_POTION_SPELL_ID, GetTime()) then
+            self:SendUseMessage(SHARED_HEALTH_POTION_SPELL_ID)
+            self:RefreshTracker()
+        end
+    end
 end
 
 function PartyOffCD:HandleObservedSenderSpellcast(sender, spellID, senderTime, unitHint)
@@ -753,11 +888,18 @@ function PartyOffCD:HandleCombatLogEvent()
     end
 
     local meta = self:GetSpellMeta(spellID)
-    if not meta or meta.type ~= "INT" or not self:IsSpellEnabled(spellID) then
+    if not meta or not self:IsSpellEnabled(spellID) then
         return
     end
 
-    self:HandleObservedCombatLogSpellcast(sourceGUID, sourceName, spellID, timestamp or GetTime())
+    if meta.trackMode == "POTION" then
+        self:HandleObservedCombatLogSpellcast(sourceGUID, sourceName, spellID, timestamp or GetTime())
+        return
+    end
+
+    if meta.type == "INT" then
+        self:HandleObservedCombatLogSpellcast(sourceGUID, sourceName, spellID, timestamp or GetTime())
+    end
 end
 
 function PartyOffCD:RefreshPartySpellcastWatchers()
@@ -923,12 +1065,14 @@ function PartyOffCD:Initialize()
     self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
     self:RegisterEvent("CHAT_MSG_ADDON")
     self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    self:RegisterEvent("BAG_UPDATE_COOLDOWN")
     self:RegisterEvent("UNIT_ABSORB_AMOUNT_CHANGED")
 
     self:RefreshPartySpellcastWatchers()
     self:RefreshMinimapButton()
     self:RequestGroupOverrides()
     self:BroadcastLocalOverrides(true)
+    self:RefreshTrackedConsumableCooldowns(true)
     self:RefreshTracker()
     DebugPrint("Loaded. Use /pocd config or click the minimap button.")
 end
@@ -952,6 +1096,11 @@ PartyOffCD:SetScript("OnEvent", function(_, event, ...)
 
     if event == "COMBAT_LOG_EVENT_UNFILTERED" then
         PartyOffCD:HandleCombatLogEvent()
+        return
+    end
+
+    if event == "BAG_UPDATE_COOLDOWN" then
+        PartyOffCD:RefreshTrackedConsumableCooldowns()
         return
     end
 

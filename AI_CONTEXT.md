@@ -8,6 +8,7 @@ Rules:
 - Evidence may only be the MiniCC-style set already in code: `Cast`, `Debuff`, `Shield`, `UnitFlags`, `FeignDeath`, plus the deferred backfill window.
 - A cooldown is committed when the tracked aura ends, using the original aura start time.
 - `INT` is the only exception: it still uses combat log because interrupts do not leave a tracked friendly aura.
+- Explicit exceptions must stay explicit. Current example: the shared health potion slot is a separate `DEF` system, not an aura-tracked spell.
 
 How to add support:
 - Add or update the spell metadata in `Spells.lua`.
@@ -23,3 +24,4 @@ Do not do this:
 UI conventions:
 - `OFF` = glow alert and cooldown icon in the HP-bar tracker. While the aura is active, the tracker icon may glow before the cooldown starts.
 - `DEF` = cooldown icon in the HP-bar tracker, plus one small center-frame icon while the defensive aura is active. Do not use glow alerts for `DEF`.
+- Health potion = one shared `DEF` tracker slot regardless of item quality. Keep it separate from `AuraTracker`, unify item aliases to one canonical entry, and treat it as an extra slot instead of competing with normal defensive icons.

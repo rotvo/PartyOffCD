@@ -128,6 +128,17 @@ local SPEC_ALIASES = {
 }
 
 local SPELLS = {
+    [1234768] = {
+        cd = 300,
+        type = "DEF",
+        displayItemID = 241304,
+        displayIconID = 7548909,
+        trackMode = "POTION",
+        alwaysShow = true,
+        extraSlot = true,
+        sortOrder = 999,
+    }, -- Shared Silvermoon Health Potion slot
+
     -- PALADIN
     [31884] = {
         cd = 120,
@@ -280,6 +291,12 @@ for spellID, meta in pairs(SPELLS) do
         cdBySpec = meta.cdBySpec,
         type = meta.type,
         class = meta.class,
+        displayItemID = meta.displayItemID,
+        displayIconID = meta.displayIconID,
+        trackMode = meta.trackMode,
+        alwaysShow = meta.alwaysShow,
+        extraSlot = meta.extraSlot,
+        sortOrder = meta.sortOrder,
         specs = meta.specs,
         requiresTalent = meta.requiresTalent,
         excludeIfTalent = meta.excludeIfTalent,
@@ -497,6 +514,12 @@ local function CreateStoredSpellMeta(spellID, meta)
         type = meta.type,
         class = meta.class,
         custom = not BASE_SPELLS[spellID],
+        displayItemID = meta.displayItemID or (baseMeta and baseMeta.displayItemID) or nil,
+        displayIconID = meta.displayIconID or (baseMeta and baseMeta.displayIconID) or nil,
+        trackMode = meta.trackMode or (baseMeta and baseMeta.trackMode) or nil,
+        alwaysShow = meta.alwaysShow or (baseMeta and baseMeta.alwaysShow) or nil,
+        extraSlot = meta.extraSlot or (baseMeta and baseMeta.extraSlot) or nil,
+        sortOrder = meta.sortOrder or (baseMeta and baseMeta.sortOrder) or nil,
         specs = meta.specs or (baseMeta and baseMeta.specs) or nil,
         requiresTalent = meta.requiresTalent or (baseMeta and baseMeta.requiresTalent) or nil,
         excludeIfTalent = meta.excludeIfTalent or (baseMeta and baseMeta.excludeIfTalent) or nil,

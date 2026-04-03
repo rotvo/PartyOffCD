@@ -35,6 +35,9 @@ local MISSING_BUFFS = {
 }
 
 local SafeGetSpellInfo = PartyOffCDCore.SafeGetSpellInfo
+local SafeGetDisplayInfo = PartyOffCDCore.SafeGetDisplayInfo or function(spellID)
+    return SafeGetSpellInfo(spellID)
+end
 local GetUnitSpecID = PartyOffCDCore.GetUnitSpecID
 local FormatRemaining = PartyOffCDCore.FormatRemaining
 local GetUnitFullName = PartyOffCDCore.GetUnitFullName
@@ -402,7 +405,8 @@ function PartyOffCD:ShowCooldownUseAlert(senderKey, spellID)
         return false
     end
 
-    local _, iconTexture = SafeGetSpellInfo(spellID)
+    local meta = self:GetEffectiveMeta(senderKey, spellID)
+    local _, iconTexture = SafeGetDisplayInfo(spellID, meta)
     if not iconTexture then
         return false
     end
@@ -902,7 +906,15 @@ function PartyOffCD:AcquireIcon(parent)
         end
 
         GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
-        GameTooltip:SetSpellByID(button.spellID)
+        if button.displayItemID then
+            if GameTooltip.SetItemByID then
+                GameTooltip:SetItemByID(button.displayItemID)
+            else
+                GameTooltip:SetHyperlink("item:" .. tostring(button.displayItemID))
+            end
+        else
+            GameTooltip:SetSpellByID(button.spellID)
+        end
         GameTooltip:AddLine("Base CD: " .. tostring(button.baseCD) .. "s", 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
@@ -967,6 +979,7 @@ function PartyOffCD:ReleaseRowIcons(row)
         icon:ClearAllPoints()
         icon:SetParent(UIParent)
         icon.spellID = nil
+        icon.displayItemID = nil
         icon.baseCD = nil
         icon:SetAlpha(1)
         icon.texture:SetVertexColor(1, 1, 1, 1)
@@ -1091,6 +1104,12 @@ function PartyOffCD:GetSortedCooldowns(senderKey, onlyType)
                 AddCandidateSpellID(spellID)
             end
         end
+
+        for spellID, meta in pairs(SPELLS) do
+            if meta and meta.alwaysShow then
+                AddCandidateSpellID(spellID)
+            end
+        end
     end
 
     for _, spellID in ipairs(candidateSpellIDs) do
@@ -1136,6 +1155,9 @@ function PartyOffCD:GetSortedCooldowns(senderKey, onlyType)
 
         if a.meta.type ~= b.meta.type then
             return (SPELL_TYPE_PRIORITY[a.meta.type] or 99) < (SPELL_TYPE_PRIORITY[b.meta.type] or 99)
+        end
+        if (a.meta.sortOrder or 0) ~= (b.meta.sortOrder or 0) then
+            return (a.meta.sortOrder or 0) < (b.meta.sortOrder or 0)
         end
         if a.meta.class ~= b.meta.class then
             return tostring(a.meta.class) < tostring(b.meta.class)
@@ -1194,8 +1216,15 @@ function PartyOffCD:RenderRow(row, rosterEntry)
 
     local entries = self:GetSortedCooldowns(rosterEntry.key)
     local maxIcons = self:GetTrackerMaxIcons()
-    if maxIcons > 0 and #entries > maxIcons then
-        while #entries > maxIcons do
+    local extraSlots = 0
+    for _, entry in ipairs(entries) do
+        if entry and entry.meta and entry.meta.extraSlot then
+            extraSlots = extraSlots + 1
+        end
+    end
+
+    if maxIcons > 0 and #entries > (maxIcons + extraSlots) then
+        while #entries > (maxIcons + extraSlots) do
             tremove(entries)
         end
     end
@@ -1252,7 +1281,7 @@ function PartyOffCD:RenderRow(row, rosterEntry)
 
     for iconIndex, entry in ipairs(entries) do
         local icon = self:AcquireIcon(row)
-        local _, texture = SafeGetSpellInfo(entry.spellID)
+        local _, texture = SafeGetDisplayInfo(entry.spellID, entry.meta)
         local slotX
         local slotY
 
@@ -1270,6 +1299,7 @@ function PartyOffCD:RenderRow(row, rosterEntry)
 
         icon:SetSize(iconSize, iconSize)
         icon.spellID = entry.spellID
+        icon.displayItemID = entry.meta and entry.meta.displayItemID or nil
         icon.baseCD = entry.meta.cd
         icon.texture:SetTexture(texture or 134400)
         icon.typeText:SetText("")
